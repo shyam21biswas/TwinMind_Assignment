@@ -133,7 +133,7 @@ class PhoneCallMonitor(private val context: Context) {
 class BatteryMonitor(private val context: Context) {
 
     companion object {
-        private const val LOW_BATTERY_PERCENT = 6
+        private const val LOW_BATTERY_PERCENT = 3
     }
 
     interface Callback {

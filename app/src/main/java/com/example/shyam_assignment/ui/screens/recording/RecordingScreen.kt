@@ -243,8 +243,11 @@ fun RecordingScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Transcript preview placeholder
-            TranscriptPreviewPlaceholder()
+            // Live Transcript
+            TranscriptCard(
+                segments = uiState.transcriptSegments,
+                isRecording = uiState.isRecording
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -433,7 +436,10 @@ private fun ChunkStat(
 }
 
 @Composable
-private fun TranscriptPreviewPlaceholder() {
+private fun TranscriptCard(
+    segments: List<TranscriptSegment>,
+    isRecording: Boolean
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -448,11 +454,25 @@ private fun TranscriptPreviewPlaceholder() {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = "Transcript will appear here in real-time during recording...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TwinTextSecondary
-            )
+            if (segments.isEmpty()) {
+                Text(
+                    text = if (isRecording)
+                        "Transcription will appear here as chunks are processed..."
+                    else
+                        "Start recording to see transcript.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TwinTextSecondary
+                )
+            } else {
+                segments.forEach { segment ->
+                    Text(
+                        text = segment.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+            }
         }
     }
 }

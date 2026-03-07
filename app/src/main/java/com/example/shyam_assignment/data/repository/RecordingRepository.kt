@@ -23,6 +23,8 @@ interface RecordingRepository {
     // Audio chunk operations
     suspend fun insertChunk(chunk: AudioChunkEntity)
 
+    suspend fun getChunkById(chunkId: String): AudioChunkEntity?
+
     fun getChunksBySession(sessionId: String): Flow<List<AudioChunkEntity>>
 
     suspend fun updateChunkTranscription(chunkId: String, state: String, text: String?)

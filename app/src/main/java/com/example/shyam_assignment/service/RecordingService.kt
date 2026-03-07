@@ -501,11 +501,12 @@ class RecordingService : Service() {
         val durationMs = (dataBytesWritten * 1000L) / BYTES_PER_SECOND
         val overlapMs = if (currentChunkIndex > 0) OVERLAP_DURATION_MS else 0L
         val chunkIdx = currentChunkIndex
+        val chunkId = UUID.randomUUID().toString()
 
         serviceScope.launch {
             recordingRepository.insertChunk(
                 AudioChunkEntity(
-                    chunkId = UUID.randomUUID().toString(),
+                    chunkId = chunkId,
                     sessionId = sid,
                     chunkIndex = chunkIdx,
                     filePath = file.absolutePath,
@@ -516,6 +517,13 @@ class RecordingService : Service() {
                     createdAt = now,
                     updatedAt = now
                 )
+            )
+
+            // Enqueue transcription via WorkManager
+            com.example.shyam_assignment.worker.ChunkTranscriptionWorker.enqueue(
+                context = this@RecordingService,
+                chunkId = chunkId,
+                sessionId = sid
             )
         }
         serviceState.updateTotalChunks(chunkIdx + 1)

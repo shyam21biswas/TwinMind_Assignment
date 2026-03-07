@@ -11,7 +11,8 @@ data class RecordingUiState(
     val error: String? = null,
     val currentChunkIndex: Int = 0,
     val totalChunks: Int = 0,
-    val activeInputSource: String = "MICROPHONE"
+    val activeInputSource: String = "MICROPHONE",
+    val transcriptSegments: List<TranscriptSegment> = emptyList()
 ) {
     val formattedTime: String
         get() {
@@ -20,5 +21,15 @@ data class RecordingUiState(
             val seconds = totalSeconds % 60
             return "%02d:%02d".format(minutes, seconds)
         }
+
+    /** Full transcript from all segments joined by newlines */
+    val fullTranscript: String
+        get() = transcriptSegments.joinToString("\n") { it.text }
 }
+
+/** UI model for a transcript segment */
+data class TranscriptSegment(
+    val chunkIndex: Int,
+    val text: String
+)
 

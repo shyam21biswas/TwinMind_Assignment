@@ -39,6 +39,9 @@ class RecordingRepositoryImpl @Inject constructor(
     override suspend fun insertChunk(chunk: AudioChunkEntity) =
         chunkDao.insert(chunk)
 
+    override suspend fun getChunkById(chunkId: String): AudioChunkEntity? =
+        chunkDao.getChunkById(chunkId)
+
     override fun getChunksBySession(sessionId: String): Flow<List<AudioChunkEntity>> =
         chunkDao.getChunksBySessionFlow(sessionId)
 

@@ -13,6 +13,9 @@ interface AudioChunkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(chunk: AudioChunkEntity)
 
+    @Query("SELECT * FROM audio_chunks WHERE chunkId = :chunkId")
+    suspend fun getChunkById(chunkId: String): AudioChunkEntity?
+
     @Query("SELECT * FROM audio_chunks WHERE sessionId = :sessionId ORDER BY chunkIndex ASC")
     fun getChunksBySessionFlow(sessionId: String): Flow<List<AudioChunkEntity>>
 
