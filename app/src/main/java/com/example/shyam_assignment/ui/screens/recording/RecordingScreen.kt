@@ -1,5 +1,10 @@
 package com.example.shyam_assignment.ui.screens.recording
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,12 +39,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shyam_assignment.ui.theme.TwinElevatedCard
@@ -54,7 +66,46 @@ fun RecordingScreen(
     onRecordingComplete: (String) -> Unit,
     viewModel: RecordingViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Track if user just stopped → navigate to summary
+    var previouslyRecording by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.isRecording, uiState.sessionId) {
+        if (previouslyRecording && !uiState.isRecording && uiState.sessionId != null) {
+            onRecordingComplete(uiState.sessionId!!)
+        }
+        previouslyRecording = uiState.isRecording
+    }
+
+    // Permission handling
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                        PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        hasAudioPermission = results[Manifest.permission.RECORD_AUDIO] == true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasNotificationPermission = results[Manifest.permission.POST_NOTIFICATIONS] == true
+        }
+        // If audio granted, start recording
+        if (hasAudioPermission) {
+            viewModel.startRecording(context)
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -93,7 +144,7 @@ fun RecordingScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Status Chip
-            StatusChipPlaceholder(statusText = uiState.statusText, isRecording = uiState.isRecording)
+            StatusChip(statusText = uiState.statusText, isRecording = uiState.isRecording)
 
             Spacer(modifier = Modifier.height(40.dp))
 
@@ -114,9 +165,17 @@ fun RecordingScreen(
                 isRecording = uiState.isRecording,
                 onClick = {
                     if (uiState.isRecording) {
-                        viewModel.stopRecording()
+                        viewModel.stopRecording(context)
                     } else {
-                        viewModel.startRecording()
+                        if (hasAudioPermission) {
+                            viewModel.startRecording(context)
+                        } else {
+                            val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                            permissionLauncher.launch(perms.toTypedArray())
+                        }
                     }
                 }
             )
@@ -136,8 +195,8 @@ fun RecordingScreen(
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Pause,
-                            contentDescription = "Pause",
+                            imageVector = if (uiState.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                            contentDescription = if (uiState.isPaused) "Resume" else "Pause",
                             tint = TwinTextSecondary,
                             modifier = Modifier.size(28.dp)
                         )
@@ -145,7 +204,7 @@ fun RecordingScreen(
 
                     Spacer(modifier = Modifier.width(24.dp))
 
-                    IconButton(onClick = { viewModel.stopRecording() }) {
+                    IconButton(onClick = { viewModel.stopRecording(context) }) {
                         Icon(
                             imageVector = Icons.Filled.Stop,
                             contentDescription = "Stop",
@@ -158,8 +217,18 @@ fun RecordingScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Warning area placeholder
-            WarningPlaceholder()
+            // Warning area
+            if (!hasAudioPermission) {
+                WarningCard(message = "Microphone permission is required to record audio.")
+            } else if (uiState.warningMessage != null) {
+                WarningCard(message = uiState.warningMessage!!)
+            }
+
+            // Error area
+            if (uiState.error != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ErrorCard(message = uiState.error!!)
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -205,7 +274,7 @@ private fun RecordButton(
 }
 
 @Composable
-private fun StatusChipPlaceholder(statusText: String, isRecording: Boolean) {
+private fun StatusChip(statusText: String, isRecording: Boolean) {
     val chipColor = if (isRecording) TwinPrimary else TwinTextSecondary
 
     Box(
@@ -234,7 +303,7 @@ private fun StatusChipPlaceholder(statusText: String, isRecording: Boolean) {
 }
 
 @Composable
-private fun WarningPlaceholder() {
+private fun WarningCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -244,15 +313,34 @@ private fun WarningPlaceholder() {
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "⚠",
-                fontSize = 16.sp
-            )
+            Text(text = "⚠", fontSize = 16.sp)
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = "Warning area — permission or microphone alerts will appear here.",
+                text = message,
                 style = MaterialTheme.typography.bodySmall,
                 color = TwinWarning
+            )
+        }
+    }
+}
+
+@Composable
+private fun ErrorCard(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = TwinError.copy(alpha = 0.1f))
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "❌", fontSize = 16.sp)
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = TwinError
             )
         }
     }

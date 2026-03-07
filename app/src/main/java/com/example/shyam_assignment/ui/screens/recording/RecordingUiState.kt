@@ -1,6 +1,7 @@
 package com.example.shyam_assignment.ui.screens.recording
 
 data class RecordingUiState(
+    val sessionId: String? = null,
     val isRecording: Boolean = false,
     val isPaused: Boolean = false,
     val elapsedTimeMs: Long = 0L,

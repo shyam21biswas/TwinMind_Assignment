@@ -21,6 +21,9 @@ class RecordingRepositoryImpl @Inject constructor(
     override fun getSessionById(sessionId: String): Flow<RecordingSessionEntity?> =
         sessionDao.getSessionByIdFlow(sessionId)
 
+    override suspend fun getSessionByIdOnce(sessionId: String): RecordingSessionEntity? =
+        sessionDao.getSessionById(sessionId)
+
     override fun getActiveSession(): Flow<RecordingSessionEntity?> =
         sessionDao.getActiveSessionFlow()
 
@@ -45,4 +48,5 @@ class RecordingRepositoryImpl @Inject constructor(
     override suspend fun incrementChunkRetry(chunkId: String) =
         chunkDao.incrementRetryCount(chunkId)
 }
+
 

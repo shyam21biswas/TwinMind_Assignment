@@ -10,6 +10,8 @@ interface RecordingRepository {
 
     fun getSessionById(sessionId: String): Flow<RecordingSessionEntity?>
 
+    suspend fun getSessionByIdOnce(sessionId: String): RecordingSessionEntity?
+
     fun getActiveSession(): Flow<RecordingSessionEntity?>
 
     suspend fun insertSession(session: RecordingSessionEntity)
@@ -27,4 +29,5 @@ interface RecordingRepository {
 
     suspend fun incrementChunkRetry(chunkId: String)
 }
+
 
