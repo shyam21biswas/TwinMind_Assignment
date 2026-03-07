@@ -46,6 +46,7 @@ class RecordingService : Service() {
 
         const val ACTION_START = "com.example.shyam_assignment.action.START_RECORDING"
         const val ACTION_STOP = "com.example.shyam_assignment.action.STOP_RECORDING"
+        const val ACTION_RESUME = "com.example.shyam_assignment.action.RESUME_RECORDING"
 
         private const val SAMPLE_RATE = 16_000
         private const val CHANNELS = 1
@@ -53,17 +54,16 @@ class RecordingService : Service() {
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
-        /** Bytes per second of raw PCM: 16000 Hz × 1 ch × 2 bytes = 32 000 B/s */
         private const val BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8)
 
-        /** Main chunk duration */
         private const val CHUNK_DURATION_SEC = 30
-        private const val CHUNK_SIZE_BYTES = BYTES_PER_SECOND * CHUNK_DURATION_SEC  // 960 000
+        private const val CHUNK_SIZE_BYTES = BYTES_PER_SECOND * CHUNK_DURATION_SEC
 
-        /** Overlap duration */
         private const val OVERLAP_DURATION_SEC = 2
-        private const val OVERLAP_SIZE_BYTES = BYTES_PER_SECOND * OVERLAP_DURATION_SEC  // 64 000
+        private const val OVERLAP_SIZE_BYTES = BYTES_PER_SECOND * OVERLAP_DURATION_SEC
         private const val OVERLAP_DURATION_MS = (OVERLAP_DURATION_SEC * 1000).toLong()
+
+        private const val STORAGE_CHECK_INTERVAL_SEC = 30
 
         fun startRecording(context: Context) {
             val intent = Intent(context, RecordingService::class.java).apply {
@@ -76,7 +76,14 @@ class RecordingService : Service() {
             val intent = Intent(context, RecordingService::class.java).apply {
                 action = ACTION_STOP
             }
-            ContextCompat.startForegroundService(context, intent)
+            context.startService(intent)
+        }
+
+        fun resumeRecording(context: Context) {
+            val intent = Intent(context, RecordingService::class.java).apply {
+                action = ACTION_RESUME
+            }
+            context.startService(intent)
         }
     }
 
@@ -86,6 +93,7 @@ class RecordingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var timerJob: Job? = null
     private var recordingJob: Job? = null
+    private var storageCheckJob: Job? = null
 
     private var audioRecord: AudioRecord? = null
     private var sessionId: String? = null
@@ -99,9 +107,16 @@ class RecordingService : Service() {
     private var currentChunkStartTime: Long = 0L
     private var currentChunkBytesWritten: Long = 0L
     private var currentChunkFile: File? = null
-
-    /** Ring buffer that holds the last ~2 seconds of PCM for overlap */
     private val overlapBuffer = ByteArrayOutputStream(OVERLAP_SIZE_BYTES + 4096)
+
+    // ── Edge-case handlers ─────────────────────────────────────────────
+    private var phoneCallMonitor: PhoneCallMonitor? = null
+    private var batteryMonitor: BatteryMonitor? = null
+    private var audioSourceMonitor: AudioSourceMonitor? = null
+    private val silenceDetector = SilenceDetector()
+
+    /** Tracks the reason the recording was auto-paused so we auto-resume correctly. */
+    private var autoPauseReason: String? = null
 
     // ── Lifecycle ──────────────────────────────────────────────────────
 
@@ -109,13 +124,15 @@ class RecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> handleStart()
-            ACTION_STOP -> handleStop()
+            ACTION_START  -> handleStart()
+            ACTION_STOP   -> handleStop()
+            ACTION_RESUME -> handleResume()
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        tearDownEdgeCaseHandlers()
         handleStop()
         serviceScope.cancel()
         super.onDestroy()
@@ -124,17 +141,42 @@ class RecordingService : Service() {
     // ── Start recording ────────────────────────────────────────────────
 
     private fun handleStart() {
-        if (serviceState.isRecording.value) return
+        // MUST call startForeground() immediately to avoid crash.
+        // Android enforces this within ~5s of startForegroundService().
+        startForeground(NOTIFICATION_ID, buildNotification("Starting...", paused = false))
+
+        if (serviceState.isRecording.value) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+
+        // Pre-check storage
+        if (!StorageMonitor.hasEnoughStorage(this)) {
+            serviceState.updateError("Cannot start — Low storage")
+            serviceState.updateStatus("Error")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+
+        // Pre-check battery
+        val batteryCheck = BatteryMonitor(this)
+        if (batteryCheck.isBatteryLow()) {
+            serviceState.updateError("Cannot start — Battery below 6%")
+            serviceState.updateStatus("Error")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
 
         val id = UUID.randomUUID().toString()
         sessionId = id
         val now = System.currentTimeMillis()
 
-        // Create output directory for this session
         val dir = File(filesDir, "recordings/$id").also { it.mkdirs() }
         recordingsDir = dir
 
-        // Persist session to Room
         serviceScope.launch {
             recordingRepository.insertSession(
                 RecordingSessionEntity(
@@ -149,14 +191,13 @@ class RecordingService : Service() {
             )
         }
 
-        // Start foreground
-        startForeground(NOTIFICATION_ID, buildNotification("Recording..."))
+        // Update notification to show recording state
+        notifyNotification("Recording...", paused = false)
 
-        // Reset chunk state
         currentChunkIndex = 0
         overlapBuffer.reset()
+        autoPauseReason = null
 
-        // Update shared state
         serviceState.updateSessionId(id)
         serviceState.updateRecording(true)
         serviceState.updatePaused(false)
@@ -166,53 +207,59 @@ class RecordingService : Service() {
         serviceState.updateElapsedTime(0L)
         serviceState.updateCurrentChunkIndex(0)
         serviceState.updateTotalChunks(0)
+        serviceState.updateActiveInputSource("MICROPHONE")
         accumulatedTimeMs = 0L
         recordingStartTimeMs = System.currentTimeMillis()
 
-        // Start audio capture with chunking
+        setUpEdgeCaseHandlers()
         startChunkedCapture()
-
-        // Start timer
         startTimer()
+        startStorageMonitor()
+    }
+
+    // ── Resume recording (from auto-pause) ─────────────────────────────
+
+    private fun handleResume() {
+        if (!serviceState.isRecording.value) return
+        if (!serviceState.isPaused.value) return
+
+        autoPauseReason = null
+        recordingStartTimeMs = System.currentTimeMillis()
+
+        serviceState.updatePaused(false)
+        serviceState.updateStatus("Recording...")
+        serviceState.updateWarning(null)
+
+        updateSessionStatus(SessionStatus.RECORDING)
+        notifyNotification("Recording...", paused = false)
     }
 
     // ── Stop recording ─────────────────────────────────────────────────
 
-    private fun handleStop() {
-        timerJob?.cancel()
-        timerJob = null
+    private fun handleStop(errorMessage: String? = null) {
+        tearDownEdgeCaseHandlers()
 
-        // Signal the capture loop to exit
+        timerJob?.cancel(); timerJob = null
+        storageCheckJob?.cancel(); storageCheckJob = null
+
         val wasRecording = serviceState.isRecording.value
         serviceState.updateRecording(false)
 
-        // Cancel the recording coroutine — this will NOT finalize the chunk,
-        // so we finalize it explicitly here.
-        recordingJob?.cancel()
-        recordingJob = null
+        recordingJob?.cancel(); recordingJob = null
 
-        // Stop AudioRecord
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping AudioRecord", e)
-        }
+        try { audioRecord?.stop(); audioRecord?.release() }
+        catch (e: Exception) { Log.e(TAG, "Error stopping AudioRecord", e) }
         audioRecord = null
 
-        // Finalize last chunk if it has data
-        if (wasRecording) {
-            finalizeCurrentChunk()
-        }
+        if (wasRecording) finalizeCurrentChunk()
 
         val now = System.currentTimeMillis()
         val elapsed = if (recordingStartTimeMs > 0)
-            accumulatedTimeMs + (now - recordingStartTimeMs)
-        else 0L
+            accumulatedTimeMs + (now - recordingStartTimeMs) else 0L
 
-        // Update Room session
         val sid = sessionId
         if (sid != null) {
+            val finalStatus = if (errorMessage != null) SessionStatus.ERROR else SessionStatus.STOPPED
             serviceScope.launch {
                 val existing = recordingRepository.getSessionByIdOnce(sid)
                 if (existing != null) {
@@ -220,7 +267,8 @@ class RecordingService : Service() {
                         existing.copy(
                             endedAt = now,
                             durationMs = elapsed,
-                            status = SessionStatus.STOPPED,
+                            status = finalStatus,
+                            errorMessage = errorMessage,
                             updatedAt = now
                         )
                     )
@@ -228,15 +276,120 @@ class RecordingService : Service() {
             }
         }
 
-        // Update shared state
         serviceState.updatePaused(false)
-        serviceState.updateStatus("Recording stopped")
+        if (errorMessage != null) {
+            serviceState.updateError(errorMessage)
+            serviceState.updateStatus("Error")
+        } else {
+            serviceState.updateStatus("Recording stopped")
+        }
         serviceState.updateElapsedTime(elapsed)
 
         sessionId = null
         recordingStartTimeMs = 0L
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // ── Edge-case handler setup / teardown ─────────────────────────────
+
+    private fun setUpEdgeCaseHandlers() {
+        // 1. Phone calls
+        phoneCallMonitor = PhoneCallMonitor(this).also {
+            it.start(object : PhoneCallMonitor.Callback {
+                override fun onCallStarted() = autoPause("Phone call")
+                override fun onCallEnded()   = autoResume("Phone call")
+            })
+        }
+
+        // 2. Battery monitor — stop recording if battery drops below 6%
+        batteryMonitor = BatteryMonitor(this).also {
+            it.start(object : BatteryMonitor.Callback {
+                override fun onBatteryLow(level: Int) {
+                    Log.w(TAG, "Battery low ($level%) — stopping recording")
+                    handleStop(errorMessage = "Recording stopped — Battery low ($level%)")
+                }
+            })
+        }
+
+        // 3. Audio source changes
+        audioSourceMonitor = AudioSourceMonitor(this).also {
+            it.start(object : AudioSourceMonitor.Callback {
+                override fun onSourceChanged(newSource: String) {
+                    serviceState.updateActiveInputSource(newSource)
+                    serviceState.updateWarning("Audio source changed to $newSource")
+                    updateSessionInputSource(newSource)
+                }
+            })
+        }
+
+        // 5. Silence detector
+        silenceDetector.start(object : SilenceDetector.Callback {
+            override fun onSilenceDetected() {
+                serviceState.updateWarning("No audio detected — Check microphone")
+            }
+            override fun onSoundDetected() {
+                if (serviceState.warningMessage.value == "No audio detected — Check microphone") {
+                    serviceState.updateWarning(null)
+                }
+            }
+        })
+    }
+
+    private fun tearDownEdgeCaseHandlers() {
+        phoneCallMonitor?.stop(); phoneCallMonitor = null
+        batteryMonitor?.stop(); batteryMonitor = null
+        audioSourceMonitor?.stop(); audioSourceMonitor = null
+        silenceDetector.stop()
+    }
+
+    // ── Auto-pause / auto-resume ───────────────────────────────────────
+
+    private fun autoPause(reason: String) {
+        if (!serviceState.isRecording.value || serviceState.isPaused.value) return
+        autoPauseReason = reason
+
+        // Accumulate elapsed time before pausing
+        if (recordingStartTimeMs > 0) {
+            accumulatedTimeMs += System.currentTimeMillis() - recordingStartTimeMs
+            recordingStartTimeMs = 0L
+        }
+
+        serviceState.updatePaused(true)
+        serviceState.updateStatus("Paused — $reason")
+        updateSessionStatus(SessionStatus.PAUSED)
+        notifyNotification("Paused — $reason", paused = true)
+    }
+
+    private fun autoResume(matchReason: String) {
+        if (!serviceState.isRecording.value || !serviceState.isPaused.value) return
+        if (autoPauseReason != matchReason) return
+
+        autoPauseReason = null
+        recordingStartTimeMs = System.currentTimeMillis()
+
+        serviceState.updatePaused(false)
+        serviceState.updateStatus("Recording...")
+        serviceState.updateWarning(null)
+        updateSessionStatus(SessionStatus.RECORDING)
+        notifyNotification("Recording...", paused = false)
+    }
+
+    // ── Storage monitor ────────────────────────────────────────────────
+
+    private fun startStorageMonitor() {
+        storageCheckJob = serviceScope.launch {
+            while (isActive && serviceState.isRecording.value) {
+                delay(STORAGE_CHECK_INTERVAL_SEC * 1000L)
+                if (!StorageMonitor.hasEnoughStorage(this@RecordingService)) {
+                    Log.w(TAG, "Low storage detected — stopping recording")
+                    launch(Dispatchers.Main) {
+                        handleStop(errorMessage = "Recording stopped — Low storage")
+                    }
+                    break
+                }
+            }
+        }
     }
 
     // ── Chunked audio capture ──────────────────────────────────────────
@@ -265,8 +418,6 @@ class RecordingService : Service() {
 
                 audioRecord = recorder
                 recorder.startRecording()
-
-                // Open the first chunk
                 openNewChunk()
 
                 val readBuffer = ByteArray(bufferSize)
@@ -284,10 +435,13 @@ class RecordingService : Service() {
                     currentWavWriter?.write(readBuffer, 0, bytesRead)
                     currentChunkBytesWritten += bytesRead
 
-                    // Maintain overlap ring buffer: keep only the last OVERLAP_SIZE_BYTES
+                    // Overlap ring buffer
                     feedOverlapBuffer(readBuffer, bytesRead)
 
-                    // Check if chunk is full (30 seconds of data)
+                    // Silence detection
+                    silenceDetector.feed(readBuffer, bytesRead)
+
+                    // Chunk rollover
                     if (currentChunkBytesWritten >= CHUNK_SIZE_BYTES) {
                         rolloverChunk()
                     }
@@ -300,12 +454,7 @@ class RecordingService : Service() {
         }
     }
 
-    /**
-     * Opens a new WAV file for the current chunk index and writes the
-     * overlap buffer from the previous chunk as a prefix.
-     */
     private fun openNewChunk() {
-        val sid = sessionId ?: return
         val dir = recordingsDir ?: return
         val now = System.currentTimeMillis()
 
@@ -316,7 +465,6 @@ class RecordingService : Service() {
         val writer = WavWriter(chunkFile, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE)
         writer.start()
 
-        // If there's overlap data from the previous chunk, prefix it
         val overlapData = overlapBuffer.toByteArray()
         if (overlapData.isNotEmpty() && currentChunkIndex > 0) {
             writer.write(overlapData)
@@ -326,25 +474,16 @@ class RecordingService : Service() {
         }
 
         currentWavWriter = writer
-
-        // Update UI state
         serviceState.updateCurrentChunkIndex(currentChunkIndex)
         serviceState.updateTotalChunks(currentChunkIndex + 1)
     }
 
-    /**
-     * Finalizes the current chunk and opens a new one.
-     * The overlap buffer already holds the last ~2 seconds.
-     */
     private fun rolloverChunk() {
         finalizeCurrentChunk()
         currentChunkIndex++
         openNewChunk()
     }
 
-    /**
-     * Closes the current WAV writer and saves chunk metadata to Room.
-     */
     private fun finalizeCurrentChunk() {
         val writer = currentWavWriter ?: return
         val file = currentChunkFile ?: return
@@ -357,7 +496,6 @@ class RecordingService : Service() {
         writer.finish()
         currentWavWriter = null
 
-        // Only persist if we actually recorded audio
         if (dataBytesWritten <= 0) return
 
         val durationMs = (dataBytesWritten * 1000L) / BYTES_PER_SECOND
@@ -380,19 +518,11 @@ class RecordingService : Service() {
                 )
             )
         }
-
-        // Update total count in UI
         serviceState.updateTotalChunks(chunkIdx + 1)
     }
 
-    /**
-     * Feeds raw PCM bytes into the overlap ring buffer.
-     * Keeps only the most recent [OVERLAP_SIZE_BYTES] bytes.
-     */
     private fun feedOverlapBuffer(data: ByteArray, length: Int) {
         overlapBuffer.write(data, 0, length)
-
-        // Trim to keep only the tail
         if (overlapBuffer.size() > OVERLAP_SIZE_BYTES) {
             val full = overlapBuffer.toByteArray()
             val keep = full.copyOfRange(full.size - OVERLAP_SIZE_BYTES, full.size)
@@ -407,22 +537,54 @@ class RecordingService : Service() {
         timerJob = serviceScope.launch {
             while (isActive) {
                 delay(1_000)
-                if (!serviceState.isPaused.value && serviceState.isRecording.value) {
-                    val elapsed = accumulatedTimeMs + (System.currentTimeMillis() - recordingStartTimeMs)
+                if (serviceState.isRecording.value) {
+                    val elapsed = if (serviceState.isPaused.value) {
+                        accumulatedTimeMs
+                    } else {
+                        accumulatedTimeMs + (System.currentTimeMillis() - recordingStartTimeMs)
+                    }
                     serviceState.updateElapsedTime(elapsed)
 
-                    val formatted = formatTime(elapsed)
-                    val chunkInfo = "Chunk ${serviceState.currentChunkIndex.value + 1}"
-                    val nm = getSystemService(NotificationManager::class.java)
-                    nm.notify(NOTIFICATION_ID, buildNotification("$formatted — $chunkInfo"))
+                    if (!serviceState.isPaused.value) {
+                        val formatted = formatTime(elapsed)
+                        val chunkInfo = "Chunk ${serviceState.currentChunkIndex.value + 1}"
+                        notifyNotification("$formatted — $chunkInfo", paused = false)
+                    }
                 }
             }
         }
     }
 
+    // ── Room helpers ───────────────────────────────────────────────────
+
+    private fun updateSessionStatus(status: String) {
+        val sid = sessionId ?: return
+        serviceScope.launch {
+            val existing = recordingRepository.getSessionByIdOnce(sid) ?: return@launch
+            recordingRepository.updateSession(
+                existing.copy(status = status, updatedAt = System.currentTimeMillis())
+            )
+        }
+    }
+
+    private fun updateSessionInputSource(source: String) {
+        val sid = sessionId ?: return
+        serviceScope.launch {
+            val existing = recordingRepository.getSessionByIdOnce(sid) ?: return@launch
+            recordingRepository.updateSession(
+                existing.copy(activeInputSource = source, updatedAt = System.currentTimeMillis())
+            )
+        }
+    }
+
     // ── Notification ───────────────────────────────────────────────────
 
-    private fun buildNotification(contentText: String): Notification {
+    private fun notifyNotification(contentText: String, paused: Boolean) {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(NOTIFICATION_ID, buildNotification(contentText, paused))
+    }
+
+    private fun buildNotification(contentText: String, paused: Boolean): Notification {
         val tapIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -439,15 +601,29 @@ class RecordingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TwinMind Recording")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_mic_notification)
             .setOngoing(true)
             .setContentIntent(tapPending)
-            .addAction(R.drawable.ic_stop_notification, "Stop", stopPending)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+
+        if (paused) {
+            val resumeIntent = Intent(this, RecordingService::class.java).apply {
+                action = ACTION_RESUME
+            }
+            val resumePending = PendingIntent.getService(
+                this, 2, resumeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(R.drawable.ic_mic_notification, "Resume", resumePending)
+            builder.addAction(R.drawable.ic_stop_notification, "Stop", stopPending)
+        } else {
+            builder.addAction(R.drawable.ic_stop_notification, "Stop", stopPending)
+        }
+
+        return builder.build()
     }
 
     private fun formatTime(ms: Long): String {
@@ -457,5 +633,3 @@ class RecordingService : Service() {
         return "%02d:%02d".format(min, sec)
     }
 }
-
-

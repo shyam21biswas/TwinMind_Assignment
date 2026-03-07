@@ -39,6 +39,8 @@ class RecordingViewModel @Inject constructor(
         state.copy(warningMessage = warning)
     }.combine(serviceState.errorMessage) { state, error ->
         state.copy(error = error)
+    }.combine(serviceState.activeInputSource) { state, source ->
+        state.copy(activeInputSource = source)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -58,9 +60,8 @@ class RecordingViewModel @Inject constructor(
         serviceState.updateStatus("Paused")
     }
 
-    fun resumeRecording() {
-        serviceState.updatePaused(false)
-        serviceState.updateStatus("Recording...")
+    fun resumeRecording(context: Context) {
+        RecordingService.resumeRecording(context)
     }
 }
 

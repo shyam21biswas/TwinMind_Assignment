@@ -190,7 +190,7 @@ fun RecordingScreen(
                 ) {
                     IconButton(
                         onClick = {
-                            if (uiState.isPaused) viewModel.resumeRecording()
+                            if (uiState.isPaused) viewModel.resumeRecording(context)
                             else viewModel.pauseRecording()
                         }
                     ) {
@@ -236,7 +236,8 @@ fun RecordingScreen(
                 ChunkInfoCard(
                     currentChunkIndex = uiState.currentChunkIndex,
                     totalChunks = uiState.totalChunks,
-                    isRecording = uiState.isRecording
+                    isRecording = uiState.isRecording,
+                    activeInputSource = uiState.activeInputSource
                 )
             }
 
@@ -360,7 +361,8 @@ private fun ErrorCard(message: String) {
 private fun ChunkInfoCard(
     currentChunkIndex: Int,
     totalChunks: Int,
-    isRecording: Boolean
+    isRecording: Boolean,
+    activeInputSource: String
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -386,6 +388,23 @@ private fun ChunkInfoCard(
                     label = "Status",
                     value = if (isRecording) "Writing" else "Idle",
                     valueColor = if (isRecording) TwinPrimary else TwinTextSecondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Input source indicator
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val sourceLabel = when (activeInputSource) {
+                    "BLUETOOTH" -> "🎧 Bluetooth"
+                    "WIRED_HEADSET" -> "🎧 Wired Headset"
+                    "USB_HEADSET" -> "🔌 USB Headset"
+                    else -> "🎙 Built-in Mic"
+                }
+                Text(
+                    text = "Source: $sourceLabel",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TwinTextSecondary
                 )
             }
         }

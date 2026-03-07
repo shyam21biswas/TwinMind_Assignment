@@ -40,6 +40,9 @@ class RecordingServiceState @Inject constructor() {
     private val _totalChunks = MutableStateFlow(0)
     val totalChunks: StateFlow<Int> = _totalChunks.asStateFlow()
 
+    private val _activeInputSource = MutableStateFlow("MICROPHONE")
+    val activeInputSource: StateFlow<String> = _activeInputSource.asStateFlow()
+
     fun updateRecording(recording: Boolean) { _isRecording.value = recording }
     fun updatePaused(paused: Boolean) { _isPaused.value = paused }
     fun updateElapsedTime(ms: Long) { _elapsedTimeMs.value = ms }
@@ -49,6 +52,7 @@ class RecordingServiceState @Inject constructor() {
     fun updateError(msg: String?) { _errorMessage.value = msg }
     fun updateCurrentChunkIndex(index: Int) { _currentChunkIndex.value = index }
     fun updateTotalChunks(count: Int) { _totalChunks.value = count }
+    fun updateActiveInputSource(source: String) { _activeInputSource.value = source }
 
     fun reset() {
         _isRecording.value = false
@@ -60,6 +64,7 @@ class RecordingServiceState @Inject constructor() {
         _errorMessage.value = null
         _currentChunkIndex.value = 0
         _totalChunks.value = 0
+        _activeInputSource.value = "MICROPHONE"
     }
 }
 

@@ -10,7 +10,8 @@ data class RecordingUiState(
     val warningMessage: String? = null,
     val error: String? = null,
     val currentChunkIndex: Int = 0,
-    val totalChunks: Int = 0
+    val totalChunks: Int = 0,
+    val activeInputSource: String = "MICROPHONE"
 ) {
     val formattedTime: String
         get() {
