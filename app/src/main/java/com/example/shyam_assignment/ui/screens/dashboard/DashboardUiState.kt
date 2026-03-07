@@ -1,12 +1,12 @@
 package com.example.shyam_assignment.ui.screens.dashboard
 
-import com.example.shyam_assignment.data.model.Meeting
+import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
 
 data class DashboardUiState(
-    val meetings: List<Meeting> = emptyList(),
+    val sessions: List<RecordingSessionEntity> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null
 ) {
-    val isEmpty: Boolean get() = meetings.isEmpty() && !isLoading
+    val isEmpty: Boolean get() = sessions.isEmpty() && !isLoading
 }
 

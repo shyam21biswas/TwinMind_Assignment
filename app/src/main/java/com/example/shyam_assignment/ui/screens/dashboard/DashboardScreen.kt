@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,8 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.shyam_assignment.data.model.Meeting
-import com.example.shyam_assignment.data.model.MeetingStatus
+import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
+import com.example.shyam_assignment.data.local.entity.SessionStatus
 import com.example.shyam_assignment.ui.theme.TwinElevatedCard
 import com.example.shyam_assignment.ui.theme.TwinPrimary
 import com.example.shyam_assignment.ui.theme.TwinSecondary
@@ -111,22 +112,20 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        color = TwinPrimary
-                    )
+                    CircularProgressIndicator(color = TwinPrimary)
                 }
             } else if (uiState.isEmpty) {
                 // Empty State
                 EmptyState()
             } else {
-                // Meetings List
+                // Sessions List
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(uiState.meetings, key = { it.id }) { meeting ->
-                        MeetingCard(
-                            meeting = meeting,
-                            onClick = { onMeetingClick(meeting.id) }
+                    items(uiState.sessions, key = { it.sessionId }) { session ->
+                        SessionCard(
+                            session = session,
+                            onClick = { onMeetingClick(session.sessionId) }
                         )
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -180,8 +179,8 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun MeetingCard(
-    meeting: Meeting,
+private fun SessionCard(
+    session: RecordingSessionEntity,
     onClick: () -> Unit
 ) {
     Card(
@@ -200,7 +199,7 @@ private fun MeetingCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = meeting.title,
+                    text = session.title ?: "Untitled Recording",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -210,7 +209,7 @@ private fun MeetingCard(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                StatusChip(status = meeting.status)
+                StatusChip(status = session.status)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -226,7 +225,7 @@ private fun MeetingCard(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = formatDate(meeting.date),
+                    text = formatDate(session.startedAt),
                     style = MaterialTheme.typography.bodySmall,
                     color = TwinTextSecondary
                 )
@@ -241,20 +240,9 @@ private fun MeetingCard(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = formatDuration(meeting.duration),
+                    text = formatDuration(session.durationMs),
                     style = MaterialTheme.typography.bodySmall,
                     color = TwinTextSecondary
-                )
-            }
-
-            if (meeting.summary.isNotBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = meeting.summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TwinTextSecondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -262,14 +250,16 @@ private fun MeetingCard(
 }
 
 @Composable
-private fun StatusChip(status: MeetingStatus) {
+private fun StatusChip(status: String) {
     val (label, color) = when (status) {
-        MeetingStatus.RECORDING -> "Recording" to TwinPrimary
-        MeetingStatus.RECORDED -> "Recorded" to TwinTextSecondary
-        MeetingStatus.TRANSCRIBING -> "Transcribing" to TwinSecondary
-        MeetingStatus.SUMMARIZING -> "Summarizing" to TwinSecondary
-        MeetingStatus.COMPLETED -> "Completed" to TwinPrimary
-        MeetingStatus.ERROR -> "Error" to MaterialTheme.colorScheme.error
+        SessionStatus.RECORDING -> "Recording" to TwinPrimary
+        SessionStatus.PAUSED -> "Paused" to TwinSecondary
+        SessionStatus.STOPPED -> "Recorded" to TwinTextSecondary
+        SessionStatus.TRANSCRIBING -> "Transcribing" to TwinSecondary
+        SessionStatus.SUMMARIZING -> "Summarizing" to TwinSecondary
+        SessionStatus.COMPLETED -> "Completed" to TwinPrimary
+        SessionStatus.ERROR -> "Error" to MaterialTheme.colorScheme.error
+        else -> "Idle" to TwinTextSecondary
     }
 
     Box(

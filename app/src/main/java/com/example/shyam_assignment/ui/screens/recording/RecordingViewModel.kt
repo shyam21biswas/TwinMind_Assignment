@@ -1,7 +1,7 @@
 package com.example.shyam_assignment.ui.screens.recording
 
 import androidx.lifecycle.ViewModel
-import com.example.shyam_assignment.data.repository.MeetingRepository
+import com.example.shyam_assignment.data.repository.RecordingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,7 +10,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class RecordingViewModel @Inject constructor(
-    private val repository: MeetingRepository
+    private val recordingRepository: RecordingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RecordingUiState())
