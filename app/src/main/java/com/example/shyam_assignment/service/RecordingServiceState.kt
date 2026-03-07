@@ -34,6 +34,12 @@ class RecordingServiceState @Inject constructor() {
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _currentChunkIndex = MutableStateFlow(0)
+    val currentChunkIndex: StateFlow<Int> = _currentChunkIndex.asStateFlow()
+
+    private val _totalChunks = MutableStateFlow(0)
+    val totalChunks: StateFlow<Int> = _totalChunks.asStateFlow()
+
     fun updateRecording(recording: Boolean) { _isRecording.value = recording }
     fun updatePaused(paused: Boolean) { _isPaused.value = paused }
     fun updateElapsedTime(ms: Long) { _elapsedTimeMs.value = ms }
@@ -41,6 +47,8 @@ class RecordingServiceState @Inject constructor() {
     fun updateStatus(text: String) { _statusText.value = text }
     fun updateWarning(msg: String?) { _warningMessage.value = msg }
     fun updateError(msg: String?) { _errorMessage.value = msg }
+    fun updateCurrentChunkIndex(index: Int) { _currentChunkIndex.value = index }
+    fun updateTotalChunks(count: Int) { _totalChunks.value = count }
 
     fun reset() {
         _isRecording.value = false
@@ -50,6 +58,8 @@ class RecordingServiceState @Inject constructor() {
         _statusText.value = "Ready to record"
         _warningMessage.value = null
         _errorMessage.value = null
+        _currentChunkIndex.value = 0
+        _totalChunks.value = 0
     }
 }
 

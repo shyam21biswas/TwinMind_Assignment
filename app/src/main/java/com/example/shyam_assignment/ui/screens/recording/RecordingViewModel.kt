@@ -23,15 +23,22 @@ class RecordingViewModel @Inject constructor(
         serviceState.sessionId,
         serviceState.statusText
     ) { isRecording, isPaused, elapsed, sessionId, status ->
+        // First pass: combine the 5 main fields
         RecordingUiState(
             sessionId = sessionId,
             isRecording = isRecording,
             isPaused = isPaused,
             elapsedTimeMs = elapsed,
-            statusText = status,
-            warningMessage = serviceState.warningMessage.value,
-            error = serviceState.errorMessage.value
+            statusText = status
         )
+    }.combine(serviceState.currentChunkIndex) { state, chunkIndex ->
+        state.copy(currentChunkIndex = chunkIndex)
+    }.combine(serviceState.totalChunks) { state, total ->
+        state.copy(totalChunks = total)
+    }.combine(serviceState.warningMessage) { state, warning ->
+        state.copy(warningMessage = warning)
+    }.combine(serviceState.errorMessage) { state, error ->
+        state.copy(error = error)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -47,7 +54,6 @@ class RecordingViewModel @Inject constructor(
     }
 
     fun pauseRecording() {
-        // Pause support will be refined in a later part
         serviceState.updatePaused(true)
         serviceState.updateStatus("Paused")
     }

@@ -8,7 +8,9 @@ data class RecordingUiState(
     val transcriptPreview: String = "",
     val statusText: String = "Ready to record",
     val warningMessage: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    val currentChunkIndex: Int = 0,
+    val totalChunks: Int = 0
 ) {
     val formattedTime: String
         get() {

@@ -230,6 +230,16 @@ fun RecordingScreen(
                 ErrorCard(message = uiState.error!!)
             }
 
+            // Chunk info
+            if (uiState.isRecording || uiState.totalChunks > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                ChunkInfoCard(
+                    currentChunkIndex = uiState.currentChunkIndex,
+                    totalChunks = uiState.totalChunks,
+                    isRecording = uiState.isRecording
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // Transcript preview placeholder
@@ -343,6 +353,63 @@ private fun ErrorCard(message: String) {
                 color = TwinError
             )
         }
+    }
+}
+
+@Composable
+private fun ChunkInfoCard(
+    currentChunkIndex: Int,
+    totalChunks: Int,
+    isRecording: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Audio Chunks",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ChunkStat(label = "Active Chunk", value = "#${currentChunkIndex + 1}")
+                ChunkStat(label = "Total Chunks", value = "$totalChunks")
+                ChunkStat(
+                    label = "Status",
+                    value = if (isRecording) "Writing" else "Idle",
+                    valueColor = if (isRecording) TwinPrimary else TwinTextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChunkStat(
+    label: String,
+    value: String,
+    valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = valueColor
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = TwinTextSecondary
+        )
     }
 }
 
