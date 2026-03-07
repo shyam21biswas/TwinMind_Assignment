@@ -15,6 +15,9 @@ class SummaryRepositoryImpl @Inject constructor(
     override fun getSummaryBySession(sessionId: String): Flow<SummaryEntity?> =
         summaryDao.getSummaryBySessionFlow(sessionId)
 
+    override suspend fun getSummaryBySessionOnce(sessionId: String): SummaryEntity? =
+        summaryDao.getSummaryBySession(sessionId)
+
     override suspend fun insertOrUpdateSummary(summary: SummaryEntity) =
         summaryDao.insertOrUpdate(summary)
 

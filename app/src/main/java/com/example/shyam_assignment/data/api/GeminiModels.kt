@@ -58,3 +58,12 @@ data class GeminiError(
     val status: String? = null
 )
 
+// ── Summary structured output ──────────────────────────────────────────
+
+data class SummaryJsonResponse(
+    val title: String = "",
+    val summary: String = "",
+    val actionItems: List<String> = emptyList(),
+    val keyPoints: List<String> = emptyList()
+)
+

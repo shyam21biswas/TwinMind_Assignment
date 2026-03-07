@@ -15,6 +15,9 @@ class TranscriptRepositoryImpl @Inject constructor(
     override fun getTranscriptBySession(sessionId: String): Flow<List<TranscriptSegmentEntity>> =
         transcriptDao.getSegmentsBySessionFlow(sessionId)
 
+    override suspend fun getTranscriptBySessionOnce(sessionId: String): List<TranscriptSegmentEntity> =
+        transcriptDao.getSegmentsBySession(sessionId)
+
     override suspend fun insertSegment(segment: TranscriptSegmentEntity) =
         transcriptDao.insert(segment)
 

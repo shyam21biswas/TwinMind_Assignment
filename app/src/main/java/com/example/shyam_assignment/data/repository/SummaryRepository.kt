@@ -7,6 +7,8 @@ interface SummaryRepository {
 
     fun getSummaryBySession(sessionId: String): Flow<SummaryEntity?>
 
+    suspend fun getSummaryBySessionOnce(sessionId: String): SummaryEntity?
+
     suspend fun insertOrUpdateSummary(summary: SummaryEntity)
 
     suspend fun deleteSummary(sessionId: String)

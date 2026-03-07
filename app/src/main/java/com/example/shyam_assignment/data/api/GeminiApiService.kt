@@ -31,6 +31,22 @@ class GeminiApiService @Inject constructor() {
             "Preserve the original spoken language. " +
             "Do not summarize. Do not add explanations. " +
             "Return only the transcript text."
+
+        private const val SUMMARY_PROMPT =
+            "You are generating a clean meeting summary for a note-taking app. " +
+            "Based on the transcript below, return structured JSON with these fields only: " +
+            "title, summary, actionItems, keyPoints.\n\n" +
+            "Rules:\n" +
+            "- title: short and specific\n" +
+            "- summary: concise but informative paragraph\n" +
+            "- actionItems: concrete follow-up tasks (array of strings)\n" +
+            "- keyPoints: important discussion highlights (array of strings)\n" +
+            "- do not include any extra keys\n" +
+            "- do not include markdown\n" +
+            "- do not include commentary outside JSON\n\n" +
+            "Return ONLY valid JSON. Example format:\n" +
+            "{\"title\":\"...\",\"summary\":\"...\",\"actionItems\":[\"...\"],\"keyPoints\":[\"...\"]}\n\n" +
+            "Transcript:\n"
     }
 
     private val gson = Gson()
@@ -116,6 +132,87 @@ class GeminiApiService @Inject constructor() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Transcription failed", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Generates a structured meeting summary from transcript text.
+     *
+     * @return parsed [SummaryJsonResponse] on success
+     */
+    suspend fun generateSummary(transcriptText: String): Result<SummaryJsonResponse> {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isBlank()) {
+            return Result.failure(IllegalStateException("GEMINI_API_KEY is not configured"))
+        }
+
+        return try {
+            val fullPrompt = SUMMARY_PROMPT + transcriptText
+
+            val request = GeminiRequest(
+                contents = listOf(
+                    GeminiContent(
+                        parts = listOf(GeminiPart(text = fullPrompt))
+                    )
+                ),
+                generationConfig = GenerationConfig(
+                    temperature = 0.2f,
+                    maxOutputTokens = 4096
+                )
+            )
+
+            val jsonBody = gson.toJson(request)
+            val url = "$BASE_URL/$MODEL:generateContent?key=$apiKey"
+
+            val httpRequest = Request.Builder()
+                .url(url)
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = client.newCall(httpRequest).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                Log.e(TAG, "Gemini summary API error ${response.code}: $responseBody")
+                val geminiResp = try {
+                    gson.fromJson(responseBody, GeminiResponse::class.java)
+                } catch (_: Exception) { null }
+                val errMsg = geminiResp?.error?.message ?: "HTTP ${response.code}"
+                return Result.failure(IOException("Gemini API error: $errMsg"))
+            }
+
+            val geminiResponse = gson.fromJson(responseBody, GeminiResponse::class.java)
+            val rawText = geminiResponse.candidates
+                ?.firstOrNull()
+                ?.content
+                ?.parts
+                ?.firstOrNull()
+                ?.text
+                ?.trim()
+
+            if (rawText.isNullOrBlank()) {
+                return Result.failure(IOException("Empty summary returned by Gemini"))
+            }
+
+            // Strip markdown code fences if present
+            val cleanJson = rawText
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+
+            Log.d(TAG, "Summary raw JSON: ${cleanJson.take(200)}")
+
+            val summaryResponse = gson.fromJson(cleanJson, SummaryJsonResponse::class.java)
+            if (summaryResponse.title.isBlank() && summaryResponse.summary.isBlank()) {
+                Result.failure(IOException("Parsed summary is empty"))
+            } else {
+                Log.d(TAG, "Summary generated: title='${summaryResponse.title}'")
+                Result.success(summaryResponse)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Summary generation failed", e)
             Result.failure(e)
         }
     }

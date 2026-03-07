@@ -7,6 +7,8 @@ interface TranscriptRepository {
 
     fun getTranscriptBySession(sessionId: String): Flow<List<TranscriptSegmentEntity>>
 
+    suspend fun getTranscriptBySessionOnce(sessionId: String): List<TranscriptSegmentEntity>
+
     suspend fun insertSegment(segment: TranscriptSegmentEntity)
 
     suspend fun insertSegments(segments: List<TranscriptSegmentEntity>)

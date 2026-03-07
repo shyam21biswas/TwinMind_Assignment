@@ -19,6 +19,9 @@ import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,17 +34,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
 import com.example.shyam_assignment.data.local.entity.SummaryEntity
+import com.example.shyam_assignment.data.local.entity.SummaryStatus
 import com.example.shyam_assignment.data.local.entity.TranscriptSegmentEntity
 import com.example.shyam_assignment.ui.theme.TwinElevatedCard
 import com.example.shyam_assignment.ui.theme.TwinError
@@ -58,6 +64,12 @@ fun SummaryScreen(
     viewModel: SummaryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Auto-trigger summary generation when entering screen
+    LaunchedEffect(Unit) {
+        viewModel.generateSummary(context)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -87,21 +99,30 @@ fun SummaryScreen(
     ) { innerPadding ->
         when {
             uiState.isLoading -> {
-                LoadingPlaceholder(modifier = Modifier.padding(innerPadding))
-            }
-
-            uiState.error != null -> {
-                ErrorPlaceholder(
-                    error = uiState.error!!,
+                LoadingPlaceholder(
+                    message = "Loading session...",
                     modifier = Modifier.padding(innerPadding)
                 )
             }
 
-            uiState.session != null -> {
+            uiState.session == null -> {
+                ErrorPlaceholder(
+                    error = uiState.error ?: "Session not found",
+                    onRetry = null,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+
+            else -> {
                 SummaryContent(
                     session = uiState.session!!,
                     summary = uiState.summary,
                     transcript = uiState.transcript,
+                    isSummaryGenerating = uiState.isSummaryGenerating,
+                    summaryStatus = uiState.summaryStatus,
+                    summaryError = if (uiState.summaryStatus == SummaryStatus.FAILED) uiState.error else null,
+                    onRetrySummary = { viewModel.retrySummary(context) },
+                    onGenerateSummary = { viewModel.generateSummary(context) },
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -114,6 +135,11 @@ private fun SummaryContent(
     session: RecordingSessionEntity,
     summary: SummaryEntity?,
     transcript: List<TranscriptSegmentEntity>,
+    isSummaryGenerating: Boolean,
+    summaryStatus: String?,
+    summaryError: String?,
+    onRetrySummary: () -> Unit,
+    onGenerateSummary: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val actionItems = remember(summary?.actionItemsJson) {
@@ -138,7 +164,10 @@ private fun SummaryContent(
             iconTint = TwinPrimary
         ) {
             Text(
-                text = session.title ?: "Untitled Recording",
+                text = if (summaryStatus == SummaryStatus.COMPLETED && !summary?.title.isNullOrBlank())
+                    summary!!.title
+                else
+                    session.title ?: "Untitled Recording",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -152,6 +181,24 @@ private fun SummaryContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Summary generation status
+        if (isSummaryGenerating) {
+            SummaryGeneratingCard()
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Summary error + retry
+        if (summaryError != null) {
+            SummaryErrorCard(error = summaryError, onRetry = onRetrySummary)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Generate button if no summary and not generating and has transcript
+        if (summaryStatus == null && !isSummaryGenerating && transcript.isNotEmpty()) {
+            GenerateSummaryButton(onClick = onGenerateSummary)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // Summary Card
         SummaryCard(
             icon = Icons.AutoMirrored.Outlined.Notes,
@@ -160,7 +207,12 @@ private fun SummaryContent(
         ) {
             val summaryText = summary?.summary.orEmpty()
             Text(
-                text = summaryText.ifBlank { "Summary will be generated by Gemini AI..." },
+                text = when {
+                    summaryText.isNotBlank() -> summaryText
+                    isSummaryGenerating -> "Generating summary with Gemini AI..."
+                    transcript.isEmpty() -> "No transcript available. Record a meeting first."
+                    else -> "Summary will be generated by Gemini AI..."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (summaryText.isBlank()) TwinTextSecondary
                 else MaterialTheme.colorScheme.onSurface
@@ -177,7 +229,8 @@ private fun SummaryContent(
         ) {
             if (actionItems.isEmpty()) {
                 Text(
-                    text = "Action items will be extracted by Gemini AI...",
+                    text = if (isSummaryGenerating) "Extracting action items..."
+                    else "Action items will be extracted by Gemini AI...",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TwinTextSecondary
                 )
@@ -210,7 +263,8 @@ private fun SummaryContent(
         ) {
             if (keyPoints.isEmpty()) {
                 Text(
-                    text = "Key points will be identified by Gemini AI...",
+                    text = if (isSummaryGenerating) "Identifying key points..."
+                    else "Key points will be identified by Gemini AI...",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TwinTextSecondary
                 )
@@ -256,6 +310,8 @@ private fun SummaryContent(
     }
 }
 
+// ── Composable helpers ─────────────────────────────────────────────────
+
 @Composable
 private fun SummaryCard(
     icon: ImageVector,
@@ -290,7 +346,90 @@ private fun SummaryCard(
 }
 
 @Composable
-private fun LoadingPlaceholder(modifier: Modifier = Modifier) {
+private fun SummaryGeneratingCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(
+                color = TwinPrimary,
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "Generating Summary...",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Gemini AI is analyzing your transcript",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TwinTextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryErrorCard(error: String, onRetry: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = TwinError.copy(alpha = 0.1f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Summary Generation Failed",
+                style = MaterialTheme.typography.titleSmall,
+                color = TwinError
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = error,
+                style = MaterialTheme.typography.bodySmall,
+                color = TwinError.copy(alpha = 0.8f)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(containerColor = TwinPrimary),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Retry")
+            }
+        }
+    }
+}
+
+@Composable
+private fun GenerateSummaryButton(onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = TwinPrimary),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text("Generate Summary with Gemini AI")
+    }
+}
+
+@Composable
+private fun LoadingPlaceholder(message: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -302,7 +441,7 @@ private fun LoadingPlaceholder(modifier: Modifier = Modifier) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Loading summary...",
+                text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TwinTextSecondary
             )
@@ -311,7 +450,11 @@ private fun LoadingPlaceholder(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ErrorPlaceholder(error: String, modifier: Modifier = Modifier) {
+private fun ErrorPlaceholder(
+    error: String,
+    onRetry: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -328,9 +471,21 @@ private fun ErrorPlaceholder(error: String, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = TwinError
             )
+            if (onRetry != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(containerColor = TwinPrimary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Retry")
+                }
+            }
         }
     }
 }
+
+// ── Utility functions ──────────────────────────────────────────────────
 
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs / 1000
@@ -348,11 +503,3 @@ private fun parseJsonList(json: String?): List<String> {
         emptyList()
     }
 }
-
-
-
-
-
-
-
-
