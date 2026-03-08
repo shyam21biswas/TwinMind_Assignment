@@ -71,9 +71,17 @@ import com.example.shyam_assignment.ui.theme.TwinGradientEnd
 import com.example.shyam_assignment.ui.theme.TwinGradientStart
 import com.example.shyam_assignment.ui.theme.TwinPrimary
 import com.example.shyam_assignment.ui.theme.TwinRecordingRed
+import com.example.shyam_assignment.ui.theme.TwinSurface
 import com.example.shyam_assignment.ui.theme.TwinTextSecondary
 import com.example.shyam_assignment.ui.theme.TwinWarning
 
+/**
+ * Recording screen — the live audio recording interface.
+ * Shows: status chip, timer, record/stop button, pause controls,
+ * warning/error banners, chunk info card, and live transcript.
+ * Requests microphone permission before first recording.
+ * Navigates to summary screen when recording stops.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordingScreen(
@@ -227,7 +235,7 @@ fun RecordingScreen(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .background(TwinElevatedCard)
+                            .background(TwinSurface)
                             .border(1.dp, TwinCardBorder, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
@@ -309,6 +317,7 @@ fun RecordingScreen(
 }
 
 // ── Record Button with animated glow ───────────────────────────────────
+// Large circular button with pulsing teal glow. Starts recording on tap.
 
 @Composable
 private fun RecordButton(
@@ -386,6 +395,7 @@ private fun RecordButton(
 }
 
 // ── Status Chip ────────────────────────────────────────────────────────
+// Shows current recording status: "Recording...", "Paused", etc.
 
 @Composable
 private fun StatusChip(statusText: String, isRecording: Boolean) {
@@ -428,6 +438,7 @@ private fun StatusChip(statusText: String, isRecording: Boolean) {
 }
 
 // ── Warning Card ───────────────────────────────────────────────────────
+// Orange-tinted card for warnings (e.g., "No audio detected")
 
 @Composable
 private fun WarningCard(message: String) {
@@ -459,6 +470,7 @@ private fun WarningCard(message: String) {
 }
 
 // ── Error Card ─────────────────────────────────────────────────────────
+// Red-tinted card for errors (e.g., "Recording stopped — Low storage")
 
 @Composable
 private fun ErrorCard(message: String) {
@@ -490,6 +502,7 @@ private fun ErrorCard(message: String) {
 }
 
 // ── Chunk Info Card ────────────────────────────────────────────────────
+// Shows active chunk number, total chunks, and audio source info
 
 @Composable
 private fun ChunkInfoCard(
@@ -501,7 +514,8 @@ private fun ChunkInfoCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+        colors = CardDefaults.cardColors(containerColor = TwinSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(
@@ -571,6 +585,7 @@ private fun ChunkStat(
 }
 
 // ── Transcript Card ────────────────────────────────────────────────────
+// Shows the live transcript as chunks are transcribed by Gemini
 
 @Composable
 private fun TranscriptCard(
@@ -580,7 +595,8 @@ private fun TranscriptCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+        colors = CardDefaults.cardColors(containerColor = TwinSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

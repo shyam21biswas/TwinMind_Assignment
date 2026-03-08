@@ -7,9 +7,13 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Implementation of TranscriptRepository.
+ * Delegates all calls to the TranscriptSegmentDao.
+ */
 @Singleton
 class TranscriptRepositoryImpl @Inject constructor(
-    private val transcriptDao: TranscriptSegmentDao
+    private val transcriptDao: TranscriptSegmentDao  // DAO for transcript segments
 ) : TranscriptRepository {
 
     override fun getTranscriptBySession(sessionId: String): Flow<List<TranscriptSegmentEntity>> =
@@ -27,4 +31,3 @@ class TranscriptRepositoryImpl @Inject constructor(
     override suspend fun deleteTranscriptBySession(sessionId: String) =
         transcriptDao.deleteSegmentsBySession(sessionId)
 }
-

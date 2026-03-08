@@ -13,12 +13,19 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Seeds the Room database with sample meeting data on first launch.
+ * Only runs if the database is empty (no existing sessions).
+ * Creates 3 sample sessions with summaries and transcripts so the
+ * dashboard doesn't look empty when the user first opens the app.
+ */
 @Singleton
 class DatabaseSeeder @Inject constructor(
     private val sessionDao: RecordingSessionDao,
     private val summaryDao: SummaryDao,
     private val transcriptDao: TranscriptSegmentDao
 ) {
+    /** Inserts sample data only if no sessions exist yet */
     suspend fun seedIfEmpty() {
         val existing = sessionDao.getAllSessionsFlow().first()
         if (existing.isNotEmpty()) return
@@ -115,4 +122,3 @@ class DatabaseSeeder @Inject constructor(
         )
     }
 }
-

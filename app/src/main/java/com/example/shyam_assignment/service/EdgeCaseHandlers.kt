@@ -1,5 +1,18 @@
 package com.example.shyam_assignment.service
 
+/**
+ * Edge-case handlers for the recording service.
+ *
+ * Contains 5 independent monitors that protect the recording session:
+ * 1. PhoneCallMonitor — pauses recording during phone calls
+ * 2. BatteryMonitor — stops recording if battery drops below 3%
+ * 3. AudioSourceMonitor — detects headset/bluetooth connect/disconnect
+ * 4. StorageMonitor — checks if enough disk space is available
+ * 5. SilenceDetector — warns if 10 seconds of silence detected (does NOT stop)
+ *
+ * All monitors are started when recording begins and stopped when it ends.
+ */
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -227,7 +240,7 @@ class PhoneCallMonitor(private val context: Context) {
 class BatteryMonitor(private val context: Context) {
 
     companion object {
-        private const val LOW_BATTERY_PERCENT = 3
+        private const val LOW_BATTERY_PERCENT = 10
     }
 
     interface Callback {

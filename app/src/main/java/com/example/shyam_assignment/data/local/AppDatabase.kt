@@ -11,6 +11,10 @@ import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
 import com.example.shyam_assignment.data.local.entity.SummaryEntity
 import com.example.shyam_assignment.data.local.entity.TranscriptSegmentEntity
 
+/**
+ * Room database for the app.
+ * Contains 4 tables: sessions, chunks, transcript segments, and summaries.
+ */
 @Database(
     entities = [
         RecordingSessionEntity::class,
@@ -22,9 +26,8 @@ import com.example.shyam_assignment.data.local.entity.TranscriptSegmentEntity
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun recordingSessionDao(): RecordingSessionDao
-    abstract fun audioChunkDao(): AudioChunkDao
-    abstract fun transcriptSegmentDao(): TranscriptSegmentDao
-    abstract fun summaryDao(): SummaryDao
+    abstract fun recordingSessionDao(): RecordingSessionDao       // Access recording sessions
+    abstract fun audioChunkDao(): AudioChunkDao                   // Access audio chunks
+    abstract fun transcriptSegmentDao(): TranscriptSegmentDao     // Access transcript segments
+    abstract fun summaryDao(): SummaryDao                         // Access summaries
 }
-

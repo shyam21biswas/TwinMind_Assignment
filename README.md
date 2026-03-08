@@ -1,6 +1,6 @@
 # TwinMind — AI Voice Recording & Meeting Summary App
 
-A TwinMind-inspired Android voice recording app that captures audio in real time, transcribes it using **Gemini 2.5 Flash**, and generates structured meeting summaries — all with a premium dark UI.
+A TwinMind-inspired Android voice recording app that captures audio in real time, transcribes it using **Gemini 2.5 Flash**, and generates structured meeting summaries — all with a clean, premium light UI.
 
 ---
 
@@ -160,7 +160,7 @@ app/src/main/java/com/example/shyam_assignment/
 └── ui/
     ├── theme/
     │   ├── Color.kt                  # TwinMind color palette
-    │   ├── Theme.kt                  # Dark theme configuration
+    │   ├── Theme.kt                  # Light theme configuration
     │   └── Type.kt                   # Typography
     └── screens/
         ├── dashboard/
@@ -263,23 +263,23 @@ app/src/main/java/com/example/shyam_assignment/
 
 ---
 
-## Theme — TwinMind-Inspired Dark UI
+## Theme — TwinMind-Inspired Light UI
 
 | Token           | Hex       | Usage                    |
 |-----------------|-----------|--------------------------|
-| Background      | `#0B0D10` | App background           |
-| Surface         | `#13161B` | Surface containers       |
-| Elevated Card   | `#1A1E24` | Card backgrounds         |
-| Primary         | `#7C8CFF` | Primary accent (blue)    |
-| Secondary       | `#9B7BFF` | Secondary accent (purple)|
-| Text Primary    | `#F5F7FA` | Main text                |
-| Text Secondary  | `#B8C0CC` | Muted / label text       |
-| Warning         | `#FFB74D` | Warning banners          |
-| Error / Red     | `#FF6B6B` | Error states, stop       |
-| Recording Red   | `#FF4C4C` | Recording indicators     |
-| Card Border     | `#2A2F38` | Subtle card borders      |
-| Gradient Start  | `#7C8CFF` | Accent gradient (blue)   |
-| Gradient End    | `#9B7BFF` | Accent gradient (purple) |
+| Background      | `#F7F7F3` | Warm off-white background|
+| Surface         | `#FFFFFF` | White card surfaces      |
+| Elevated Card   | `#EAF2F2` | Teal-tinted card fill    |
+| Primary         | `#0D7377` | Deep teal accent         |
+| Secondary       | `#E07C3A` | Warm orange accent       |
+| Text Primary    | `#1B3A4B` | Dark navy text           |
+| Text Secondary  | `#6B8299` | Muted blue-gray text     |
+| Warning         | `#E07C3A` | Orange warning banners   |
+| Error / Red     | `#D94444` | Error states, stop       |
+| Recording Red   | `#D94444` | Recording indicators     |
+| Card Border     | `#D0D8DD` | Light gray borders       |
+| Gradient Start  | `#0D7377` | Teal gradient start      |
+| Gradient End    | `#149DA0` | Lighter teal gradient end|
 
 ---
 

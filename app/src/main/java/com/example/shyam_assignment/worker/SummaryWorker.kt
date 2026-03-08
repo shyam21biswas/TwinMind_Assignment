@@ -24,14 +24,27 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
 
+/**
+ * WorkManager worker that generates a meeting summary using Gemini 2.5 Flash.
+ *
+ * Flow:
+ * 1. Receives sessionId as input
+ * 2. Fetches the full ordered transcript from Room
+ * 3. Sends it to Gemini API with a structured JSON prompt
+ * 4. Saves the result (title, summary, action items, key points) into Room
+ * 5. Marks the session as COMPLETED
+ * 6. Retries up to 3 times on failure with exponential backoff
+ *
+ * Enqueued by SummaryViewModel or RecoveryManager.
+ */
 @HiltWorker
 class SummaryWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
-    private val geminiApiService: GeminiApiService,
-    private val transcriptRepository: TranscriptRepository,
-    private val summaryRepository: SummaryRepository,
-    private val recordingRepository: RecordingRepository
+    private val geminiApiService: GeminiApiService,        // Calls Gemini API
+    private val transcriptRepository: TranscriptRepository, // Reads transcript from Room
+    private val summaryRepository: SummaryRepository,       // Saves summary to Room
+    private val recordingRepository: RecordingRepository    // Updates session status
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -39,6 +52,10 @@ class SummaryWorker @AssistedInject constructor(
         const val KEY_SESSION_ID = "session_id"
         private const val MAX_RETRIES = 3
 
+        /**
+         * Enqueues summary generation for a session.
+         * Uses KEEP policy — won't duplicate if already queued.
+         */
         fun enqueue(context: Context, sessionId: String) {
             val workRequest = OneTimeWorkRequestBuilder<SummaryWorker>()
                 .setInputData(workDataOf(KEY_SESSION_ID to sessionId))
@@ -66,7 +83,7 @@ class SummaryWorker @AssistedInject constructor(
         }
 
         /**
-         * Force-enqueue replacing any existing work — used for Retry.
+         * Force-enqueues by replacing any existing work — used for Retry button.
          */
         fun enqueueReplace(context: Context, sessionId: String) {
             val workRequest = OneTimeWorkRequestBuilder<SummaryWorker>()
@@ -96,6 +113,10 @@ class SummaryWorker @AssistedInject constructor(
 
     private val gson = Gson()
 
+    /**
+     * Main work method — called by WorkManager.
+     * Steps: check if done → fetch transcript → call Gemini → save summary → mark completed
+     */
     override suspend fun doWork(): Result {
         val sessionId = inputData.getString(KEY_SESSION_ID)
             ?: return Result.failure()
@@ -212,4 +233,3 @@ class SummaryWorker @AssistedInject constructor(
         }
     }
 }
-

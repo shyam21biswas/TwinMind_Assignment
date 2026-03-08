@@ -11,10 +11,15 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Implementation of RecordingRepository.
+ * Simply delegates all calls to the Room DAOs.
+ * This thin wrapper follows the repository pattern for testability.
+ */
 @Singleton
 class RecordingRepositoryImpl @Inject constructor(
-    private val sessionDao: RecordingSessionDao,
-    private val chunkDao: AudioChunkDao
+    private val sessionDao: RecordingSessionDao,   // DAO for recording sessions
+    private val chunkDao: AudioChunkDao             // DAO for audio chunks
 ) : RecordingRepository {
 
     override fun getAllSessions(): Flow<List<RecordingSessionEntity>> =
@@ -53,13 +58,13 @@ class RecordingRepositoryImpl @Inject constructor(
     override suspend fun incrementChunkRetry(chunkId: String) =
         chunkDao.incrementRetryCount(chunkId)
 
+    /** Gets sessions stuck in RECORDING/PAUSED — for crash recovery */
     override suspend fun getInterruptedSessions(): List<RecordingSessionEntity> =
         sessionDao.getSessionsByStatuses(listOf(SessionStatus.RECORDING, SessionStatus.PAUSED))
 
+    /** Gets chunks still waiting for transcription — for crash recovery */
     override suspend fun getPendingChunks(): List<AudioChunkEntity> =
         chunkDao.getChunksByTranscriptionStates(
             listOf(TranscriptionState.PENDING, TranscriptionState.IN_PROGRESS)
         )
 }
-
-

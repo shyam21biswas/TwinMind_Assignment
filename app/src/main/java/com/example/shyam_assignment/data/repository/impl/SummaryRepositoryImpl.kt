@@ -8,9 +8,13 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Implementation of SummaryRepository.
+ * Delegates all calls to the SummaryDao.
+ */
 @Singleton
 class SummaryRepositoryImpl @Inject constructor(
-    private val summaryDao: SummaryDao
+    private val summaryDao: SummaryDao // DAO for summaries
 ) : SummaryRepository {
 
     override fun getSummaryBySession(sessionId: String): Flow<SummaryEntity?> =
@@ -25,9 +29,9 @@ class SummaryRepositoryImpl @Inject constructor(
     override suspend fun deleteSummary(sessionId: String) =
         summaryDao.deleteSummary(sessionId)
 
+    /** Gets summaries still PENDING or GENERATING — used for crash recovery */
     override suspend fun getPendingSummaries(): List<SummaryEntity> =
         summaryDao.getSummariesByStatuses(
             listOf(SummaryStatus.PENDING, SummaryStatus.GENERATING)
         )
 }
-

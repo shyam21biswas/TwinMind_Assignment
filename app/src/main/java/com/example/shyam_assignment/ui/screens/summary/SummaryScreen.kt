@@ -63,10 +63,17 @@ import com.example.shyam_assignment.ui.theme.TwinGradientEnd
 import com.example.shyam_assignment.ui.theme.TwinGradientStart
 import com.example.shyam_assignment.ui.theme.TwinPrimary
 import com.example.shyam_assignment.ui.theme.TwinSecondary
+import com.example.shyam_assignment.ui.theme.TwinSurface
 import com.example.shyam_assignment.ui.theme.TwinTextSecondary
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
+/**
+ * Summary/Meeting Details screen.
+ * Shows: meeting title, AI-generated summary, action items, key points, and transcript.
+ * Auto-triggers Gemini summary generation when opened.
+ * Handles loading, error, and retry states.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SummaryScreen(
@@ -140,6 +147,7 @@ fun SummaryScreen(
     }
 }
 
+/** Main content of the summary screen — scrollable column with all cards */
 @Composable
 private fun SummaryContent(
     session: RecordingSessionEntity,
@@ -363,7 +371,9 @@ private fun SummaryContent(
 }
 
 // ── Composable helpers ─────────────────────────────────────────────────
+// Reusable card components for the summary screen.
 
+/** Reusable elevated card with icon + title header — used for each summary section */
 @Composable
 private fun SummaryCard(
     icon: ImageVector,
@@ -374,7 +384,8 @@ private fun SummaryCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+        colors = CardDefaults.cardColors(containerColor = TwinSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column {
             // Top accent gradient line
@@ -427,11 +438,13 @@ private fun SummaryCard(
 }
 
 @Composable
+/** Card shown while Gemini is generating the summary — spinner + message */
 private fun SummaryGeneratingCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+        colors = CardDefaults.cardColors(containerColor = TwinSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
@@ -469,6 +482,7 @@ private fun SummaryGeneratingCard() {
 }
 
 @Composable
+/** Card shown when summary generation fails — error message + retry button */
 private fun SummaryErrorCard(error: String, onRetry: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -510,6 +524,7 @@ private fun SummaryErrorCard(error: String, onRetry: () -> Unit) {
 }
 
 @Composable
+/** Full-width teal button to manually trigger summary generation */
 private fun GenerateSummaryButton(onClick: () -> Unit) {
     Button(
         onClick = onClick,
@@ -525,6 +540,7 @@ private fun GenerateSummaryButton(onClick: () -> Unit) {
 }
 
 @Composable
+/** Full-screen centered spinner with a loading message */
 private fun LoadingPlaceholder(message: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.fillMaxSize(),
@@ -535,7 +551,7 @@ private fun LoadingPlaceholder(message: String, modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .size(64.dp)
                     .clip(CircleShape)
-                    .background(TwinElevatedCard),
+                    .background(TwinPrimary.copy(alpha = 0.08f)),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(
@@ -555,6 +571,7 @@ private fun LoadingPlaceholder(message: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+/** Full-screen centered error message with optional retry button */
 private fun ErrorPlaceholder(
     error: String,
     onRetry: (() -> Unit)?,
@@ -599,7 +616,9 @@ private fun ErrorPlaceholder(
 }
 
 // ── Utility functions ──────────────────────────────────────────────────
+// Helper functions for formatting and parsing data.
 
+/** Formats milliseconds as "Xm Ys" (e.g., "2m 30s") */
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs / 1000
     val minutes = totalSeconds / 60
@@ -607,6 +626,7 @@ private fun formatDuration(durationMs: Long): String {
     return "${minutes}m ${seconds}s"
 }
 
+/** Parses a JSON string array like '["item1","item2"]' into a List<String> */
 private fun parseJsonList(json: String?): List<String> {
     if (json.isNullOrBlank() || json == "[]") return emptyList()
     return try {

@@ -67,14 +67,22 @@ import com.example.shyam_assignment.ui.theme.TwinElevatedCard
 import com.example.shyam_assignment.ui.theme.TwinError
 import com.example.shyam_assignment.ui.theme.TwinGradientEnd
 import com.example.shyam_assignment.ui.theme.TwinGradientStart
+import com.example.shyam_assignment.ui.theme.TwinOutline
 import com.example.shyam_assignment.ui.theme.TwinPrimary
 import com.example.shyam_assignment.ui.theme.TwinRecordingRed
 import com.example.shyam_assignment.ui.theme.TwinSecondary
+import com.example.shyam_assignment.ui.theme.TwinSurface
 import com.example.shyam_assignment.ui.theme.TwinTextSecondary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Dashboard screen — the home screen of the app.
+ * Shows a list of all recorded meetings, a loading spinner, or an empty state.
+ * Has a floating action button (FAB) to start/stop recording.
+ * When a recording is active, the FAB changes to show "Stop" + "Recording" pills.
+ */
 @Composable
 fun DashboardScreen(
     onStartRecording: () -> Unit,
@@ -207,6 +215,8 @@ fun DashboardScreen(
 }
 
 // ── Recording-aware FAB ────────────────────────────────────────────────
+// When idle: shows a "Capture" FAB to start recording.
+// When recording: shows "Stop" + pulsing "Recording" FABs with labels.
 
 @Composable
 private fun RecordingFab(
@@ -243,7 +253,7 @@ private fun RecordingFab(
             // ── Stop pill ──
             ExtendedFloatingActionButton(
                 onClick = onStopClick,
-                containerColor = TwinElevatedCard,
+                containerColor = TwinSurface,
                 contentColor = TwinError,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
@@ -319,6 +329,7 @@ private fun RecordingFab(
 }
 
 // ── Active recording banner ────────────────────────────────────────────
+// Shows a red-tinted card at the top of the dashboard when recording is active.
 
 @Composable
 private fun ActiveRecordingBanner(onClick: () -> Unit) {
@@ -338,7 +349,8 @@ private fun ActiveRecordingBanner(onClick: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinRecordingRed.copy(alpha = 0.1f))
+        colors = CardDefaults.cardColors(containerColor = TwinRecordingRed.copy(alpha = 0.08f)),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, TwinRecordingRed.copy(alpha = 0.2f))
     ) {
         Row(
             modifier = Modifier
@@ -376,6 +388,7 @@ private fun ActiveRecordingBanner(onClick: () -> Unit) {
 }
 
 // ── Empty State ────────────────────────────────────────────────────────
+// Shown when the user has no meetings yet — mic icon + helpful text.
 
 @Composable
 private fun EmptyState() {
@@ -388,7 +401,7 @@ private fun EmptyState() {
                 modifier = Modifier
                     .size(88.dp)
                     .clip(CircleShape)
-                    .background(TwinElevatedCard)
+                    .background(TwinPrimary.copy(alpha = 0.08f))
                     .border(1.dp, TwinCardBorder, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -420,6 +433,8 @@ private fun EmptyState() {
 }
 
 // ── Session Card ───────────────────────────────────────────────────────
+// Displays one meeting entry — title, date, duration, and status chip.
+// Tapping navigates to the meeting summary/details screen.
 
 @Composable
 private fun SessionCard(
@@ -441,7 +456,9 @@ private fun SessionCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
+        colors = CardDefaults.cardColors(containerColor = TwinSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, TwinOutline)
     ) {
         Row {
             // Left accent bar
@@ -518,6 +535,7 @@ private fun SessionCard(
 }
 
 // ── Status Chip ────────────────────────────────────────────────────────
+// Small colored badge showing the session's current status (Recording, Completed, etc.)
 
 @Composable
 private fun StatusChip(status: String) {
@@ -539,7 +557,8 @@ private fun StatusChip(status: String) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(color.copy(alpha = 0.12f))
+            .background(color.copy(alpha = 0.10f))
+            .border(0.5.dp, color.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
             .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -572,11 +591,13 @@ private fun StatusChip(status: String) {
 
 // ── Utility ────────────────────────────────────────────────────────────
 
+/** Formats a timestamp as "MMM dd, yyyy" (e.g., "Mar 09, 2026") */
 private fun formatDate(timestamp: Long): String {
     val sdf = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
 
+/** Formats milliseconds as "Xm Ys" (e.g., "2m 30s") */
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs / 1000
     val minutes = totalSeconds / 60

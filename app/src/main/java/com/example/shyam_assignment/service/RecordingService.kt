@@ -37,6 +37,21 @@ import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 
+/**
+ * Foreground service that handles audio recording.
+ *
+ * Key responsibilities:
+ * - Captures audio using AudioRecord (16kHz, mono, 16-bit PCM)
+ * - Splits recording into 30-second WAV chunks with ~2s overlap
+ * - Saves each chunk to disk and metadata to Room
+ * - Enqueues each chunk for Gemini transcription via WorkManager
+ * - Shows a persistent notification with Stop/Resume actions
+ * - Handles edge cases (phone calls, audio focus, bluetooth, storage, battery, silence)
+ * - Finalizes the last chunk synchronously on stop to prevent data loss
+ *
+ * Architecture:
+ *   RecordingScreen → ViewModel → RecordingService → Room + WorkManager
+ */
 @AndroidEntryPoint
 class RecordingService : Service() {
 
@@ -45,27 +60,29 @@ class RecordingService : Service() {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "twinmind_recording_channel"
 
+        // Intent actions — how the UI communicates with the service
         const val ACTION_START = "com.example.shyam_assignment.action.START_RECORDING"
         const val ACTION_STOP = "com.example.shyam_assignment.action.STOP_RECORDING"
         const val ACTION_RESUME = "com.example.shyam_assignment.action.RESUME_RECORDING"
 
-        private const val SAMPLE_RATE = 16_000
-        private const val CHANNELS = 1
-        private const val BITS_PER_SAMPLE = 16
+        // Audio format constants
+        private const val SAMPLE_RATE = 16_000           // 16kHz sample rate
+        private const val CHANNELS = 1                    // Mono
+        private const val BITS_PER_SAMPLE = 16            // 16-bit audio
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-
         private const val BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8)
 
-        private const val CHUNK_DURATION_SEC = 30
+        // Chunking constants
+        private const val CHUNK_DURATION_SEC = 30         // Each chunk is 30 seconds
         private const val CHUNK_SIZE_BYTES = BYTES_PER_SECOND * CHUNK_DURATION_SEC
-
-        private const val OVERLAP_DURATION_SEC = 2
+        private const val OVERLAP_DURATION_SEC = 2        // 2 seconds overlap between chunks
         private const val OVERLAP_SIZE_BYTES = BYTES_PER_SECOND * OVERLAP_DURATION_SEC
         private const val OVERLAP_DURATION_MS = (OVERLAP_DURATION_SEC * 1000).toLong()
 
-        private const val STORAGE_CHECK_INTERVAL_SEC = 30
+        private const val STORAGE_CHECK_INTERVAL_SEC = 30 // Check storage every 30 seconds
 
+        /** Starts the recording service from any context */
         fun startRecording(context: Context) {
             val intent = Intent(context, RecordingService::class.java).apply {
                 action = ACTION_START
@@ -73,6 +90,7 @@ class RecordingService : Service() {
             ContextCompat.startForegroundService(context, intent)
         }
 
+        /** Stops the recording service from any context */
         fun stopRecording(context: Context) {
             val intent = Intent(context, RecordingService::class.java).apply {
                 action = ACTION_STOP
@@ -80,6 +98,7 @@ class RecordingService : Service() {
             context.startService(intent)
         }
 
+        /** Resumes recording after a pause */
         fun resumeRecording(context: Context) {
             val intent = Intent(context, RecordingService::class.java).apply {
                 action = ACTION_RESUME

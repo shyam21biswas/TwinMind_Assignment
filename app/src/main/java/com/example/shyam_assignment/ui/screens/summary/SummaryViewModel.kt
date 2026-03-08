@@ -17,20 +17,30 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * ViewModel for the Summary/Meeting Details screen.
+ * Loads session data, transcript, and summary from Room.
+ * Auto-triggers summary generation via Gemini when needed.
+ */
 @HiltViewModel
 class SummaryViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val recordingRepository: RecordingRepository,
-    private val summaryRepository: SummaryRepository,
-    private val transcriptRepository: TranscriptRepository
+    savedStateHandle: SavedStateHandle,                    // Contains the meetingId from navigation
+    private val recordingRepository: RecordingRepository,  // Access to session data
+    private val summaryRepository: SummaryRepository,      // Access to summary data
+    private val transcriptRepository: TranscriptRepository // Access to transcript data
 ) : ViewModel() {
 
+    /** The session ID passed from the navigation route */
     val sessionId: String = checkNotNull(savedStateHandle["meetingId"])
 
+    /**
+     * The UI state — combines session, summary, and transcript data.
+     * Updates automatically when any of them change in Room.
+     */
     val uiState = combine(
-        recordingRepository.getSessionById(sessionId),
-        summaryRepository.getSummaryBySession(sessionId),
-        transcriptRepository.getTranscriptBySession(sessionId)
+        recordingRepository.getSessionById(sessionId),       // Session metadata
+        summaryRepository.getSummaryBySession(sessionId),    // AI summary (may be null)
+        transcriptRepository.getTranscriptBySession(sessionId) // Transcript segments
     ) { session, summary, transcript ->
         val isGenerating = summary?.status == SummaryStatus.GENERATING
         val summaryError = if (summary?.status == SummaryStatus.FAILED)
@@ -52,12 +62,14 @@ class SummaryViewModel @Inject constructor(
         initialValue = SummaryUiState(isLoading = true)
     )
 
-    /** Guards against multiple simultaneous generateSummary calls */
+    /** Prevents calling generateSummary multiple times simultaneously */
     private var generationTriggered = false
 
     /**
-     * Triggers summary generation. Called automatically when entering SummaryScreen.
-     * Will NOT re-call Gemini if summary is already COMPLETED or GENERATING.
+     * Triggers summary generation using Gemini AI.
+     * Called automatically when the summary screen opens.
+     * Skips if summary is already COMPLETED or currently GENERATING.
+     * Skips if there's no transcript to summarize.
      */
     fun generateSummary(context: Context) {
         if (generationTriggered) return
@@ -65,20 +77,17 @@ class SummaryViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                // Check current summary status in Room
                 val existing = summaryRepository.getSummaryBySessionOnce(sessionId)
 
-                // Already done — nothing to do
+                // Already done or in progress — skip
                 if (existing?.status == SummaryStatus.COMPLETED) return@launch
-
-                // Already in progress — don't re-enqueue
                 if (existing?.status == SummaryStatus.GENERATING) return@launch
 
-                // Check if there's transcript to summarize
+                // No transcript available — nothing to summarize
                 val segments = transcriptRepository.getTranscriptBySessionOnce(sessionId)
                 if (segments.isEmpty()) return@launch
 
-                // Mark as generating in Room
+                // Mark as "generating" in Room so UI shows loading state
                 summaryRepository.insertOrUpdateSummary(
                     SummaryEntity(
                         sessionId = sessionId,
@@ -87,18 +96,17 @@ class SummaryViewModel @Inject constructor(
                     )
                 )
 
-                // Enqueue the worker (unique work — won't duplicate)
+                // Enqueue WorkManager job to call Gemini API
                 SummaryWorker.enqueue(context, sessionId)
             } finally {
-                // Allow retry button to work
-                generationTriggered = false
+                generationTriggered = false  // Allow retry button to work
             }
         }
     }
 
     /**
      * Retries summary generation after a failure.
-     * Uses REPLACE policy to force a new attempt.
+     * Resets the status to GENERATING and enqueues a fresh worker.
      */
     fun retrySummary(context: Context) {
         viewModelScope.launch {

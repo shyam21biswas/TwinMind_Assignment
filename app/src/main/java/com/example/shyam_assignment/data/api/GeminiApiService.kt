@@ -15,23 +15,31 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Simple HTTP wrapper for the Gemini REST API.
- * Uses inline audio (base64) for chunk transcription.
+ * REST API client for Google Gemini 2.5 Flash.
+ *
+ * Used for two things:
+ * 1. transcribeAudio() — sends a WAV audio chunk and gets back transcript text
+ * 2. generateSummary() — sends the full transcript and gets back structured JSON summary
+ *
+ * Audio is sent inline as base64 (no file upload API needed).
+ * API key is read from BuildConfig.GEMINI_API_KEY (set in local.properties).
  */
 @Singleton
 class GeminiApiService @Inject constructor() {
 
     companion object {
         private const val TAG = "GeminiApiService"
-        private const val MODEL = "gemini-2.5-flash"
+        private const val MODEL = "gemini-2.5-flash"                // Gemini model to use
         private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
+        // Prompt for audio transcription — tells Gemini to return only transcript text
         private const val TRANSCRIPTION_PROMPT =
             "Transcribe this audio chunk accurately. " +
             "Preserve the original spoken language. " +
             "Do not summarize. Do not add explanations. " +
             "Return only the transcript text."
 
+        // Prompt for summary generation — tells Gemini to return structured JSON
         private const val SUMMARY_PROMPT =
             "You are generating a clean meeting summary for a note-taking app. " +
             "Based on the transcript below, return structured JSON with these fields only: " +
@@ -51,18 +59,23 @@ class GeminiApiService @Inject constructor() {
 
     private val gson = Gson()
 
+    // HTTP client with generous timeouts (Gemini can be slow for large audio)
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)   // transcription can be slow
+        .readTimeout(120, TimeUnit.SECONDS)    // Transcription can take a while
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     /**
-     * Transcribes an audio WAV file using Gemini 2.5 Flash.
+     * Transcribes a WAV audio file using Gemini 2.5 Flash.
      *
-     * @return the transcript text on success
-     * @throws IOException on network / API errors
-     * @throws IllegalStateException if API key is missing
+     * Steps:
+     * 1. Read the WAV file and base64-encode it
+     * 2. Send it to Gemini with the transcription prompt
+     * 3. Parse the transcript text from the response
+     *
+     * @param audioFile the WAV audio chunk file
+     * @return Result.success(transcript) or Result.failure(error)
      */
     suspend fun transcribeAudio(audioFile: File): Result<String> {
         val apiKey = BuildConfig.GEMINI_API_KEY
@@ -139,7 +152,13 @@ class GeminiApiService @Inject constructor() {
     /**
      * Generates a structured meeting summary from transcript text.
      *
-     * @return parsed [SummaryJsonResponse] on success
+     * Steps:
+     * 1. Send the full transcript to Gemini with the summary prompt
+     * 2. Parse the JSON response into a SummaryJsonResponse object
+     * 3. Return title, summary, action items, and key points
+     *
+     * @param transcriptText the full ordered transcript
+     * @return Result.success(SummaryJsonResponse) or Result.failure(error)
      */
     suspend fun generateSummary(transcriptText: String): Result<SummaryJsonResponse> {
         val apiKey = BuildConfig.GEMINI_API_KEY
@@ -217,4 +236,3 @@ class GeminiApiService @Inject constructor() {
         }
     }
 }
-

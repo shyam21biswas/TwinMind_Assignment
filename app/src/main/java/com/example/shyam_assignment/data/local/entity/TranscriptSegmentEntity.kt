@@ -5,6 +5,11 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/**
+ * Room entity for one transcript segment.
+ * Each audio chunk produces one segment after Gemini transcription.
+ * Segments are ordered by chunkIndex to form the full transcript.
+ */
 @Entity(
     tableName = "transcript_segments",
     foreignKeys = [
@@ -19,11 +24,10 @@ import androidx.room.PrimaryKey
 )
 data class TranscriptSegmentEntity(
     @PrimaryKey
-    val id: String,
-    val sessionId: String,
-    val chunkId: String,
-    val chunkIndex: Int,
-    val text: String,
+    val id: String,                 // Unique segment ID
+    val sessionId: String,          // Which session this belongs to
+    val chunkId: String,            // Which audio chunk produced this text
+    val chunkIndex: Int,            // Order number — used to sort transcript
+    val text: String,               // The transcribed text from Gemini
     val createdAt: Long = System.currentTimeMillis()
 )
-

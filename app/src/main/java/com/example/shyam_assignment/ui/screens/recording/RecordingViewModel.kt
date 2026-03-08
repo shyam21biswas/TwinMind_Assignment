@@ -16,14 +16,22 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+/**
+ * ViewModel for the Recording screen.
+ * Observes live recording state from the foreground service and
+ * live transcript segments from Room, combining them into RecordingUiState.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class RecordingViewModel @Inject constructor(
-    private val serviceState: RecordingServiceState,
-    private val transcriptRepository: TranscriptRepository
+    private val serviceState: RecordingServiceState,    // Live state from recording service
+    private val transcriptRepository: TranscriptRepository  // Access to transcript data in Room
 ) : ViewModel() {
 
-    /** Observe transcript segments whenever sessionId changes */
+    /**
+     * Watches the current sessionId — whenever it changes, switches to
+     * observing transcript segments for that session from Room.
+     */
     private val transcriptSegments = serviceState.sessionId
         .flatMapLatest { sid ->
             if (sid == null) flowOf(emptyList())
@@ -34,6 +42,10 @@ class RecordingViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * The UI state — combines all service state fields + transcript segments
+     * into a single observable state for the Recording screen.
+     */
     val uiState = combine(
         serviceState.isRecording,
         serviceState.isPaused,
@@ -66,21 +78,24 @@ class RecordingViewModel @Inject constructor(
         initialValue = RecordingUiState()
     )
 
+    /** Tells the foreground service to start recording */
     fun startRecording(context: Context) {
         RecordingService.startRecording(context)
     }
 
+    /** Tells the foreground service to stop recording */
     fun stopRecording(context: Context) {
         RecordingService.stopRecording(context)
     }
 
+    /** Pauses recording (updates shared state — service reads this) */
     fun pauseRecording() {
         serviceState.updatePaused(true)
         serviceState.updateStatus("Paused")
     }
 
+    /** Tells the foreground service to resume recording after a pause */
     fun resumeRecording(context: Context) {
         RecordingService.resumeRecording(context)
     }
 }
-

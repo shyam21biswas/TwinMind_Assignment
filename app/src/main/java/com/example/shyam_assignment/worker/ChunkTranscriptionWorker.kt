@@ -23,13 +23,25 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+/**
+ * WorkManager worker that transcribes a single audio chunk using Gemini 2.5 Flash.
+ *
+ * Flow:
+ * 1. Receives chunkId and sessionId as input
+ * 2. Reads the audio chunk file from disk
+ * 3. Sends it to Gemini API for transcription
+ * 4. Saves the transcript text into Room
+ * 5. Retries up to 3 times on failure with exponential backoff
+ *
+ * Enqueued automatically by RecordingService when a chunk is finalized.
+ */
 @HiltWorker
 class ChunkTranscriptionWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
-    private val geminiApiService: GeminiApiService,
-    private val recordingRepository: RecordingRepository,
-    private val transcriptRepository: TranscriptRepository
+    private val geminiApiService: GeminiApiService,        // Calls Gemini API
+    private val recordingRepository: RecordingRepository,  // Access to chunk data in Room
+    private val transcriptRepository: TranscriptRepository // Saves transcript segments
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -40,7 +52,8 @@ class ChunkTranscriptionWorker @AssistedInject constructor(
 
         /**
          * Enqueues a transcription job for the given chunk.
-         * Requires network connectivity. Retries with exponential backoff.
+         * Uses KEEP policy — won't duplicate if a job for this chunk already exists.
+         * Requires network. Retries with exponential backoff (15s, 30s, 60s).
          */
         fun enqueue(context: Context, chunkId: String, sessionId: String) {
             val workRequest = OneTimeWorkRequestBuilder<ChunkTranscriptionWorker>()
@@ -74,6 +87,10 @@ class ChunkTranscriptionWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * Main work method — called by WorkManager.
+     * Steps: load chunk → check if already done → read audio file → call Gemini → save result
+     */
     override suspend fun doWork(): Result {
         val chunkId = inputData.getString(KEY_CHUNK_ID)
             ?: return Result.failure()
@@ -160,4 +177,3 @@ class ChunkTranscriptionWorker @AssistedInject constructor(
         )
     }
 }
-
