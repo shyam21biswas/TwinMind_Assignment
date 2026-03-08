@@ -4,10 +4,16 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.example.shyam_assignment.service.RecordingService
+import com.example.shyam_assignment.worker.RecoveryManager
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -15,6 +21,11 @@ class TwinMindApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var recoveryManager: RecoveryManager
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -24,6 +35,7 @@ class TwinMindApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        runStartupRecovery()
     }
 
     private fun createNotificationChannels() {
@@ -39,6 +51,16 @@ class TwinMindApp : Application(), Configuration.Provider {
 
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
+        }
+    }
+
+    private fun runStartupRecovery() {
+        appScope.launch {
+            try {
+                recoveryManager.recover()
+            } catch (e: Exception) {
+                Log.e("TwinMindApp", "Startup recovery failed", e)
+            }
         }
     }
 }

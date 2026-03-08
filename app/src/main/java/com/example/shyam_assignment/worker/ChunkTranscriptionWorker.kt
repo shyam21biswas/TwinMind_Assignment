@@ -6,6 +6,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -63,7 +64,12 @@ class ChunkTranscriptionWorker @AssistedInject constructor(
                 .addTag("session_$sessionId")
                 .build()
 
-            WorkManager.getInstance(context).enqueue(workRequest)
+            // KEEP = if work for this chunk already exists, skip
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "transcribe_$chunkId",
+                ExistingWorkPolicy.KEEP,
+                workRequest
+            )
             Log.d(TAG, "Enqueued transcription for chunk=$chunkId session=$sessionId")
         }
     }
@@ -81,6 +87,12 @@ class ChunkTranscriptionWorker @AssistedInject constructor(
         if (chunk == null) {
             Log.e(TAG, "Chunk $chunkId not found in database")
             return Result.failure()
+        }
+
+        // 1b. Skip if already transcribed (prevents duplicate API calls)
+        if (chunk.transcriptionState == TranscriptionState.COMPLETED) {
+            Log.d(TAG, "Chunk $chunkId already transcribed — skipping")
+            return Result.success()
         }
 
         // 2. Check audio file exists

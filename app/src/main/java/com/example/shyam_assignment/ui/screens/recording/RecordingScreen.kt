@@ -5,6 +5,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +37,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,15 +54,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.shyam_assignment.ui.theme.TwinCardBorder
 import com.example.shyam_assignment.ui.theme.TwinElevatedCard
 import com.example.shyam_assignment.ui.theme.TwinError
+import com.example.shyam_assignment.ui.theme.TwinGlow
+import com.example.shyam_assignment.ui.theme.TwinGradientEnd
+import com.example.shyam_assignment.ui.theme.TwinGradientStart
 import com.example.shyam_assignment.ui.theme.TwinPrimary
+import com.example.shyam_assignment.ui.theme.TwinRecordingRed
 import com.example.shyam_assignment.ui.theme.TwinTextSecondary
 import com.example.shyam_assignment.ui.theme.TwinWarning
 
@@ -141,7 +156,7 @@ fun RecordingScreen(
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Status Chip
             StatusChip(statusText = uiState.statusText, isRecording = uiState.isRecording)
@@ -153,14 +168,33 @@ fun RecordingScreen(
                 text = uiState.formattedTime,
                 style = MaterialTheme.typography.headlineLarge.copy(
                     fontSize = 56.sp,
+                    fontWeight = FontWeight.Light,
                     letterSpacing = 4.sp
                 ),
                 color = MaterialTheme.colorScheme.onBackground
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Subtle gradient bar under timer
+            Box(
+                modifier = Modifier
+                    .width(64.dp)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = if (uiState.isRecording)
+                                listOf(TwinRecordingRed, TwinRecordingRed.copy(alpha = 0.3f))
+                            else
+                                listOf(TwinGradientStart, TwinGradientEnd)
+                        )
+                    )
+            )
+
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Large Record Button
+            // Large Record Button with glow
             RecordButton(
                 isRecording = uiState.isRecording,
                 onClick = {
@@ -180,7 +214,7 @@ fun RecordingScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Pause / Stop controls
             if (uiState.isRecording) {
@@ -188,29 +222,49 @@ fun RecordingScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (uiState.isPaused) viewModel.resumeRecording(context)
-                            else viewModel.pauseRecording()
-                        }
+                    // Pause/Resume
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(TwinElevatedCard)
+                            .border(1.dp, TwinCardBorder, CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (uiState.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = if (uiState.isPaused) "Resume" else "Pause",
-                            tint = TwinTextSecondary,
-                            modifier = Modifier.size(28.dp)
-                        )
+                        IconButton(
+                            onClick = {
+                                if (uiState.isPaused) viewModel.resumeRecording(context)
+                                else viewModel.pauseRecording()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (uiState.isPaused) "Resume" else "Pause",
+                                tint = TwinTextSecondary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.width(24.dp))
+                    Spacer(modifier = Modifier.width(32.dp))
 
-                    IconButton(onClick = { viewModel.stopRecording(context) }) {
-                        Icon(
-                            imageVector = Icons.Filled.Stop,
-                            contentDescription = "Stop",
-                            tint = TwinError,
-                            modifier = Modifier.size(28.dp)
-                        )
+                    // Stop
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(TwinError.copy(alpha = 0.1f))
+                            .border(1.dp, TwinError.copy(alpha = 0.3f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(onClick = { viewModel.stopRecording(context) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Stop,
+                                contentDescription = "Stop",
+                                tint = TwinError,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -249,43 +303,89 @@ fun RecordingScreen(
                 isRecording = uiState.isRecording
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
+
+// ── Record Button with animated glow ───────────────────────────────────
 
 @Composable
 private fun RecordButton(
     isRecording: Boolean,
     onClick: () -> Unit
 ) {
-    val buttonColor = if (isRecording) TwinError else TwinPrimary
+    val buttonColor = if (isRecording) TwinRecordingRed else TwinPrimary
 
     Box(
-        modifier = Modifier
-            .size(96.dp)
-            .clip(CircleShape)
-            .background(buttonColor.copy(alpha = 0.15f))
-            .border(2.dp, buttonColor.copy(alpha = 0.4f), CircleShape)
-            .padding(8.dp),
         contentAlignment = Alignment.Center
     ) {
-        IconButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(buttonColor)
-        ) {
-            Icon(
-                imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
-                contentDescription = if (isRecording) "Stop Recording" else "Start Recording",
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(32.dp)
+        // Animated glow ring (only when recording)
+        if (isRecording) {
+            val infiniteTransition = rememberInfiniteTransition(label = "record_glow")
+            val glowScale by infiniteTransition.animateFloat(
+                initialValue = 1f,
+                targetValue = 1.25f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1200, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "glow_scale"
             )
+            val glowAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.5f,
+                targetValue = 0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1200, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "glow_alpha"
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .scale(glowScale)
+                    .clip(CircleShape)
+                    .background(TwinGlow.copy(alpha = glowAlpha * 0.15f))
+                    .border(
+                        width = 2.dp,
+                        color = buttonColor.copy(alpha = glowAlpha),
+                        shape = CircleShape
+                    )
+            )
+        }
+
+        // Outer ring
+        Box(
+            modifier = Modifier
+                .size(100.dp)
+                .clip(CircleShape)
+                .background(buttonColor.copy(alpha = 0.12f))
+                .border(2.dp, buttonColor.copy(alpha = 0.35f), CircleShape)
+                .padding(10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Inner button
+            IconButton(
+                onClick = onClick,
+                modifier = Modifier
+                    .size(76.dp)
+                    .clip(CircleShape)
+                    .background(buttonColor)
+            ) {
+                Icon(
+                    imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.FiberManualRecord,
+                    contentDescription = if (isRecording) "Stop Recording" else "Start Recording",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(34.dp)
+                )
+            }
         }
     }
 }
+
+// ── Status Chip ────────────────────────────────────────────────────────
 
 @Composable
 private fun StatusChip(statusText: String, isRecording: Boolean) {
@@ -294,16 +394,27 @@ private fun StatusChip(statusText: String, isRecording: Boolean) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(chipColor.copy(alpha = 0.12f))
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(chipColor.copy(alpha = 0.1f))
+            .border(1.dp, chipColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 18.dp, vertical = 8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (isRecording) {
+                val infiniteTransition = rememberInfiniteTransition(label = "status_dot")
+                val dotAlpha by infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 0.2f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(600),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "status_dot_alpha"
+                )
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(TwinPrimary)
+                        .background(TwinRecordingRed.copy(alpha = dotAlpha))
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
@@ -316,15 +427,24 @@ private fun StatusChip(statusText: String, isRecording: Boolean) {
     }
 }
 
+// ── Warning Card ───────────────────────────────────────────────────────
+
 @Composable
 private fun WarningCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinWarning.copy(alpha = 0.1f))
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = TwinWarning.copy(alpha = 0.08f))
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = TwinWarning.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(14.dp)
+                )
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "⚠", fontSize = 16.sp)
@@ -338,15 +458,24 @@ private fun WarningCard(message: String) {
     }
 }
 
+// ── Error Card ─────────────────────────────────────────────────────────
+
 @Composable
 private fun ErrorCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinError.copy(alpha = 0.1f))
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = TwinError.copy(alpha = 0.08f))
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = TwinError.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(14.dp)
+                )
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "❌", fontSize = 16.sp)
@@ -360,6 +489,8 @@ private fun ErrorCard(message: String) {
     }
 }
 
+// ── Chunk Info Card ────────────────────────────────────────────────────
+
 @Composable
 private fun ChunkInfoCard(
     currentChunkIndex: Int,
@@ -372,14 +503,18 @@ private fun ChunkInfoCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(18.dp)) {
             Text(
                 text = "Audio Chunks",
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            HorizontalDivider(color = TwinCardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -394,9 +529,9 @@ private fun ChunkInfoCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Input source indicator
+            // Input source
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val sourceLabel = when (activeInputSource) {
                     "BLUETOOTH" -> "🎧 Bluetooth"
@@ -423,7 +558,7 @@ private fun ChunkStat(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             color = valueColor
         )
         Spacer(modifier = Modifier.height(2.dp))
@@ -435,6 +570,8 @@ private fun ChunkStat(
     }
 }
 
+// ── Transcript Card ────────────────────────────────────────────────────
+
 @Composable
 private fun TranscriptCard(
     segments: List<TranscriptSegment>,
@@ -445,14 +582,28 @@ private fun TranscriptCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Live Transcript",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Gradient accent dot
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(TwinGradientStart, TwinGradientEnd)
+                            )
+                        )
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Live Transcript",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             if (segments.isEmpty()) {
                 Text(

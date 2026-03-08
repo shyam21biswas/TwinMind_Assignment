@@ -13,17 +13,28 @@ import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.annotation.RequiresApi
-import kotlin.math.abs
 
 private const val TAG = "EdgeCaseHandlers"
 
 // ════════════════════════════════════════════════════════════════════════
-//  1.  Phone-call monitor
+//  1.  Phone-call monitor  (multi-strategy: AudioManager mode polling
+//      + TelephonyManager broadcast + AudioFocus listener)
 // ════════════════════════════════════════════════════════════════════════
 
 /**
- * Detects incoming/outgoing phone calls and invokes [onCallStarted] /
- * [onCallEnded] so the service can pause / resume recording.
+ * Detects incoming/outgoing phone calls reliably.
+ *
+ * Three strategies run in parallel for maximum coverage:
+ *  A) **AudioManager.mode polling** — every 500 ms, check if mode
+ *     switches to MODE_IN_CALL / MODE_RINGTONE / MODE_IN_COMMUNICATION.
+ *     Needs no permissions.
+ *  B) **PHONE_STATE broadcast** — works on older APIs or when
+ *     READ_PHONE_STATE has been granted.
+ *  C) **TelephonyCallback** (API 31+) — registered inside try/catch
+ *     so it's a bonus, not a requirement.
+ *
+ * Any strategy that fires first wins; duplicates are de-duplicated via
+ * the [wasInCall] flag.
  */
 class PhoneCallMonitor(private val context: Context) {
 
@@ -33,92 +44,175 @@ class PhoneCallMonitor(private val context: Context) {
     }
 
     private var callback: Callback? = null
-    private var telephonyCallback: Any? = null  // TelephonyCallback for API 31+
+
+    /* shared flag — set/read on any thread, but simple boolean is fine */
+    @Volatile private var wasInCall = false
+
+    /* Strategy A — mode polling */
+    private var pollingThread: Thread? = null
+    @Volatile private var polling = false
+
+    /* Strategy B — broadcast receiver */
     private var phoneStateReceiver: BroadcastReceiver? = null
-    private var wasInCall = false
+
+    /* Strategy C — TelephonyCallback (API 31+) */
+    private var telephonyCallback: Any? = null
+
+    // ────────────────────────────────────────────────────────────────
 
     fun start(cb: Callback) {
         callback = cb
+        wasInCall = false
+        startModePolling(cb)
+        startBroadcastReceiver(cb)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            startApi31(cb)
-        } else {
-            startLegacy(cb)
+            startTelephonyCallback(cb)
         }
     }
 
     fun stop() {
         callback = null
+        stopModePolling()
+        stopBroadcastReceiver()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            stopApi31()
-        } else {
-            stopLegacy()
+            stopTelephonyCallback()
         }
     }
 
-    // API 31+
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun startApi31(cb: Callback) {
-        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-        val tcb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
-            override fun onCallStateChanged(state: Int) {
-                handleState(state, cb)
+    // ── Strategy A: AudioManager.mode polling (no permissions) ─────
+
+    private fun startModePolling(cb: Callback) {
+        polling = true
+        pollingThread = Thread {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            while (polling) {
+                try {
+                    val mode = am.mode
+                    val inCall = mode == AudioManager.MODE_IN_CALL ||
+                                 mode == AudioManager.MODE_RINGTONE ||
+                                 mode == AudioManager.MODE_IN_COMMUNICATION
+                    if (inCall && !wasInCall) {
+                        wasInCall = true
+                        Log.d(TAG, "PhoneCallMonitor: call detected via AudioManager.mode=$mode")
+                        cb.onCallStarted()
+                    } else if (!inCall && wasInCall) {
+                        wasInCall = false
+                        Log.d(TAG, "PhoneCallMonitor: call ended via AudioManager.mode=$mode")
+                        cb.onCallEnded()
+                    }
+                    Thread.sleep(500)
+                } catch (_: InterruptedException) { break }
+                  catch (e: Exception) { Log.e(TAG, "Mode polling error", e) }
             }
-        }
-        telephonyCallback = tcb
-        try {
-            tm.registerTelephonyCallback(context.mainExecutor, tcb)
-        } catch (e: SecurityException) {
-            Log.w(TAG, "No READ_PHONE_STATE permission", e)
+        }.apply {
+            name = "PhoneCallPoll"
+            isDaemon = true
+            start()
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun stopApi31() {
-        val tcb = telephonyCallback as? TelephonyCallback ?: return
-        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-        tm.unregisterTelephonyCallback(tcb)
-        telephonyCallback = null
+    private fun stopModePolling() {
+        polling = false
+        pollingThread?.interrupt()
+        pollingThread = null
     }
 
-    // Pre-API 31
+    // ── Strategy B: PHONE_STATE broadcast ──────────────────────────
+
     @Suppress("DEPRECATION")
-    private fun startLegacy(cb: Callback) {
+    private fun startBroadcastReceiver(cb: Callback) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 val state = intent?.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
                 when (state) {
                     TelephonyManager.EXTRA_STATE_RINGING,
                     TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                        if (!wasInCall) { wasInCall = true; cb.onCallStarted() }
+                        if (!wasInCall) {
+                            wasInCall = true
+                            Log.d(TAG, "PhoneCallMonitor: call detected via broadcast state=$state")
+                            cb.onCallStarted()
+                        }
                     }
                     TelephonyManager.EXTRA_STATE_IDLE -> {
-                        if (wasInCall) { wasInCall = false; cb.onCallEnded() }
+                        if (wasInCall) {
+                            wasInCall = false
+                            Log.d(TAG, "PhoneCallMonitor: call ended via broadcast")
+                            cb.onCallEnded()
+                        }
                     }
                 }
             }
         }
         phoneStateReceiver = receiver
-        context.registerReceiver(
-            receiver,
-            IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-        )
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(
+                    receiver,
+                    IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED),
+                    Context.RECEIVER_EXPORTED
+                )
+            } else {
+                context.registerReceiver(
+                    receiver,
+                    IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register phone state receiver", e)
+            phoneStateReceiver = null
+        }
     }
 
-    private fun stopLegacy() {
-        phoneStateReceiver?.let { context.unregisterReceiver(it) }
+    private fun stopBroadcastReceiver() {
+        phoneStateReceiver?.let {
+            try { context.unregisterReceiver(it) } catch (_: Exception) {}
+        }
         phoneStateReceiver = null
     }
 
-    private fun handleState(state: Int, cb: Callback) {
-        when (state) {
-            TelephonyManager.CALL_STATE_RINGING,
-            TelephonyManager.CALL_STATE_OFFHOOK -> {
-                if (!wasInCall) { wasInCall = true; cb.onCallStarted() }
-            }
-            TelephonyManager.CALL_STATE_IDLE -> {
-                if (wasInCall) { wasInCall = false; cb.onCallEnded() }
+    // ── Strategy C: TelephonyCallback (API 31+) ────────────────────
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun startTelephonyCallback(cb: Callback) {
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        val tcb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+            override fun onCallStateChanged(state: Int) {
+                when (state) {
+                    TelephonyManager.CALL_STATE_RINGING,
+                    TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        if (!wasInCall) {
+                            wasInCall = true
+                            Log.d(TAG, "PhoneCallMonitor: call detected via TelephonyCallback")
+                            cb.onCallStarted()
+                        }
+                    }
+                    TelephonyManager.CALL_STATE_IDLE -> {
+                        if (wasInCall) {
+                            wasInCall = false
+                            Log.d(TAG, "PhoneCallMonitor: call ended via TelephonyCallback")
+                            cb.onCallEnded()
+                        }
+                    }
+                }
             }
         }
+        telephonyCallback = tcb
+        try {
+            tm.registerTelephonyCallback(context.mainExecutor, tcb)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "TelephonyCallback registration failed (no permission)", e)
+            telephonyCallback = null
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun stopTelephonyCallback() {
+        val tcb = telephonyCallback as? TelephonyCallback ?: return
+        try {
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            tm.unregisterTelephonyCallback(tcb)
+        } catch (_: Exception) {}
+        telephonyCallback = null
     }
 }
 
@@ -285,18 +379,28 @@ object StorageMonitor {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  5.  Silence detector
+//  5.  Silence detector — WARNING only (does NOT stop recording)
 // ════════════════════════════════════════════════════════════════════════
 
 /**
  * Tracks consecutive silence in a PCM-16 mono stream.
- * Silence = all samples below [SILENCE_THRESHOLD] for [SILENCE_TIMEOUT_MS].
+ *
+ * After [SILENCE_TIMEOUT_MS] (10 s) of silence → fires [onSilenceDetected]
+ * to show the warning banner.  When sound resumes → fires [onSoundDetected]
+ * to clear the warning.  Recording continues regardless.
+ *
+ * Uses RMS amplitude for robustness instead of single-sample checks.
  */
 class SilenceDetector {
 
     companion object {
-        /** Absolute sample value below which we consider "silence". */
-        private const val SILENCE_THRESHOLD = 200   // out of 32 768
+        /**
+         * RMS amplitude below which a buffer counts as "silent".
+         * 16-bit PCM range is ±32 768.  150 catches near-zero mic
+         * noise while still allowing very quiet speech through.
+         */
+        private const val RMS_SILENCE_THRESHOLD = 150
+
         /** Duration of continuous silence before we fire the warning. */
         private const val SILENCE_TIMEOUT_MS = 10_000L
     }
@@ -308,13 +412,11 @@ class SilenceDetector {
 
     private var callback: Callback? = null
     private var silenceStartMs: Long = 0L
-    private var isSilent = false
     private var warningSent = false
 
     fun start(cb: Callback) {
         callback = cb
         silenceStartMs = 0L
-        isSilent = false
         warningSent = false
     }
 
@@ -323,42 +425,52 @@ class SilenceDetector {
     }
 
     /**
-     * Feed a raw PCM-16 LE buffer. Call this on every AudioRecord read.
+     * Feed a raw PCM-16-LE buffer.  Call on every AudioRecord read.
      */
     fun feed(buffer: ByteArray, bytesRead: Int) {
         val cb = callback ?: return
         val now = System.currentTimeMillis()
 
-        // Calculate RMS-ish: check if any sample exceeds threshold
-        var loud = false
-        var i = 0
-        while (i + 1 < bytesRead) {
-            val sample = (buffer[i].toInt() and 0xFF) or (buffer[i + 1].toInt() shl 8)
-            val signed = if (sample > 32767) sample - 65536 else sample
-            if (abs(signed) > SILENCE_THRESHOLD) {
-                loud = true
-                break
-            }
-            i += 2
-        }
+        val rms = computeRms(buffer, bytesRead)
 
-        if (loud) {
-            if (isSilent || warningSent) {
-                isSilent = false
+        if (rms > RMS_SILENCE_THRESHOLD) {
+            // ── Sound detected ──────────────────────────────────────
+            if (warningSent) {
                 warningSent = false
                 cb.onSoundDetected()
             }
             silenceStartMs = 0L
         } else {
+            // ── Silence ─────────────────────────────────────────────
             if (silenceStartMs == 0L) {
                 silenceStartMs = now
             }
             if (!warningSent && (now - silenceStartMs) >= SILENCE_TIMEOUT_MS) {
-                isSilent = true
                 warningSent = true
+                Log.w(TAG, "10s silence detected — showing warning")
                 cb.onSilenceDetected()
             }
         }
+    }
+
+    /**
+     * Compute the RMS (root-mean-square) of the PCM-16 LE buffer.
+     */
+    private fun computeRms(buffer: ByteArray, bytesRead: Int): Double {
+        if (bytesRead < 2) return 0.0
+        var sumSquares = 0.0
+        var sampleCount = 0
+        var i = 0
+        while (i + 1 < bytesRead) {
+            val lo = buffer[i].toInt() and 0xFF
+            val hi = buffer[i + 1].toInt()
+            val sample = (hi shl 8) or lo
+            val signed = sample.toShort().toInt()
+            sumSquares += (signed.toLong() * signed.toLong()).toDouble()
+            sampleCount++
+            i += 2
+        }
+        return if (sampleCount > 0) kotlin.math.sqrt(sumSquares / sampleCount) else 0.0
     }
 }
 

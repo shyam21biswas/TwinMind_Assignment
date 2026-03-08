@@ -5,7 +5,9 @@ import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
 data class DashboardUiState(
     val sessions: List<RecordingSessionEntity> = emptyList(),
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val isRecording: Boolean = false,
+    val activeSessionId: String? = null
 ) {
     val isEmpty: Boolean get() = sessions.isEmpty() && !isLoading
 }

@@ -30,6 +30,11 @@ interface RecordingRepository {
     suspend fun updateChunkTranscription(chunkId: String, state: String, text: String?)
 
     suspend fun incrementChunkRetry(chunkId: String)
+
+    // Recovery helpers
+    suspend fun getInterruptedSessions(): List<RecordingSessionEntity>
+
+    suspend fun getPendingChunks(): List<AudioChunkEntity>
 }
 
 

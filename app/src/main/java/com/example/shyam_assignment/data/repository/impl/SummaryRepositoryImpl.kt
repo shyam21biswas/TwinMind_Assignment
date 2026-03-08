@@ -2,6 +2,7 @@ package com.example.shyam_assignment.data.repository.impl
 
 import com.example.shyam_assignment.data.local.dao.SummaryDao
 import com.example.shyam_assignment.data.local.entity.SummaryEntity
+import com.example.shyam_assignment.data.local.entity.SummaryStatus
 import com.example.shyam_assignment.data.repository.SummaryRepository
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -23,5 +24,10 @@ class SummaryRepositoryImpl @Inject constructor(
 
     override suspend fun deleteSummary(sessionId: String) =
         summaryDao.deleteSummary(sessionId)
+
+    override suspend fun getPendingSummaries(): List<SummaryEntity> =
+        summaryDao.getSummariesByStatuses(
+            listOf(SummaryStatus.PENDING, SummaryStatus.GENERATING)
+        )
 }
 

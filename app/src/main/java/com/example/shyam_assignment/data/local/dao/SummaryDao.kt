@@ -21,5 +21,8 @@ interface SummaryDao {
 
     @Query("DELETE FROM summaries WHERE sessionId = :sessionId")
     suspend fun deleteSummary(sessionId: String)
+
+    @Query("SELECT * FROM summaries WHERE status IN (:statuses)")
+    suspend fun getSummariesByStatuses(statuses: List<String>): List<SummaryEntity>
 }
 

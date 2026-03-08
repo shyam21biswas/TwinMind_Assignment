@@ -29,6 +29,9 @@ interface RecordingSessionDao {
     @Query("SELECT * FROM recording_sessions WHERE status IN ('RECORDING', 'PAUSED') LIMIT 1")
     fun getActiveSessionFlow(): Flow<RecordingSessionEntity?>
 
+    @Query("SELECT * FROM recording_sessions WHERE status IN (:statuses)")
+    suspend fun getSessionsByStatuses(statuses: List<String>): List<RecordingSessionEntity>
+
     @Query("DELETE FROM recording_sessions WHERE sessionId = :sessionId")
     suspend fun deleteSession(sessionId: String)
 }

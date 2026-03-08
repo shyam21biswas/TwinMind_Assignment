@@ -28,6 +28,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
@@ -251,27 +252,37 @@ class RecordingService : Service() {
         catch (e: Exception) { Log.e(TAG, "Error stopping AudioRecord", e) }
         audioRecord = null
 
-        if (wasRecording) finalizeCurrentChunk()
-
+        // Finalize the last chunk and persist everything SYNCHRONOUSLY
+        // so the service doesn't die before Room writes + WorkManager enqueue complete.
+        val sid = sessionId
         val now = System.currentTimeMillis()
         val elapsed = if (recordingStartTimeMs > 0)
             accumulatedTimeMs + (now - recordingStartTimeMs) else 0L
 
-        val sid = sessionId
-        if (sid != null) {
-            val finalStatus = if (errorMessage != null) SessionStatus.ERROR else SessionStatus.STOPPED
-            serviceScope.launch {
-                val existing = recordingRepository.getSessionByIdOnce(sid)
-                if (existing != null) {
-                    recordingRepository.updateSession(
-                        existing.copy(
-                            endedAt = now,
-                            durationMs = elapsed,
-                            status = finalStatus,
-                            errorMessage = errorMessage,
-                            updatedAt = now
+        runBlocking {
+            // 1. Finalize last chunk → insert into Room → enqueue transcription
+            if (wasRecording) {
+                finalizeCurrentChunkSync(sid, now)
+            }
+
+            // 2. Update session in Room
+            if (sid != null) {
+                val finalStatus = if (errorMessage != null) SessionStatus.ERROR else SessionStatus.STOPPED
+                try {
+                    val existing = recordingRepository.getSessionByIdOnce(sid)
+                    if (existing != null) {
+                        recordingRepository.updateSession(
+                            existing.copy(
+                                endedAt = now,
+                                durationMs = elapsed,
+                                status = finalStatus,
+                                errorMessage = errorMessage,
+                                updatedAt = now
+                            )
                         )
-                    )
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update session on stop", e)
                 }
             }
         }
@@ -323,7 +334,7 @@ class RecordingService : Service() {
             })
         }
 
-        // 5. Silence detector
+        // 5. Silence detector — warn after 10s, do NOT stop recording
         silenceDetector.start(object : SilenceDetector.Callback {
             override fun onSilenceDetected() {
                 serviceState.updateWarning("No audio detected — Check microphone")
@@ -484,6 +495,10 @@ class RecordingService : Service() {
         openNewChunk()
     }
 
+    /**
+     * Finalizes the current chunk during active recording (rollover).
+     * Uses serviceScope.launch — safe because service is still alive.
+     */
     private fun finalizeCurrentChunk() {
         val writer = currentWavWriter ?: return
         val file = currentChunkFile ?: return
@@ -526,6 +541,60 @@ class RecordingService : Service() {
                 sessionId = sid
             )
         }
+        serviceState.updateTotalChunks(chunkIdx + 1)
+    }
+
+    /**
+     * Finalizes the current chunk at stop time — SYNCHRONOUS.
+     * Called from runBlocking so Room write + WorkManager enqueue
+     * complete before the service dies.
+     */
+    private suspend fun finalizeCurrentChunkSync(sid: String?, now: Long) {
+        val writer = currentWavWriter ?: return
+        val file = currentChunkFile ?: return
+        val sessionId = sid ?: return
+
+        val chunkStartTime = currentChunkStartTime
+        val dataBytesWritten = writer.dataBytesWritten
+
+        writer.finish()
+        currentWavWriter = null
+
+        if (dataBytesWritten <= 0) return
+
+        val durationMs = (dataBytesWritten * 1000L) / BYTES_PER_SECOND
+        val overlapMs = if (currentChunkIndex > 0) OVERLAP_DURATION_MS else 0L
+        val chunkIdx = currentChunkIndex
+        val chunkId = UUID.randomUUID().toString()
+
+        try {
+            recordingRepository.insertChunk(
+                AudioChunkEntity(
+                    chunkId = chunkId,
+                    sessionId = sessionId,
+                    chunkIndex = chunkIdx,
+                    filePath = file.absolutePath,
+                    startedAt = chunkStartTime,
+                    endedAt = now,
+                    durationMs = durationMs,
+                    overlapMs = overlapMs,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+            Log.d(TAG, "Final chunk $chunkIdx saved to Room (chunkId=$chunkId)")
+
+            // Enqueue transcription — this is synchronous (just puts work in queue)
+            com.example.shyam_assignment.worker.ChunkTranscriptionWorker.enqueue(
+                context = this@RecordingService,
+                chunkId = chunkId,
+                sessionId = sessionId
+            )
+            Log.d(TAG, "Final chunk transcription enqueued")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save/enqueue final chunk", e)
+        }
+
         serviceState.updateTotalChunks(chunkIdx + 1)
     }
 

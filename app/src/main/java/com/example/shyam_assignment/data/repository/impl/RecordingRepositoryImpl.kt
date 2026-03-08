@@ -4,6 +4,8 @@ import com.example.shyam_assignment.data.local.dao.AudioChunkDao
 import com.example.shyam_assignment.data.local.dao.RecordingSessionDao
 import com.example.shyam_assignment.data.local.entity.AudioChunkEntity
 import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
+import com.example.shyam_assignment.data.local.entity.SessionStatus
+import com.example.shyam_assignment.data.local.entity.TranscriptionState
 import com.example.shyam_assignment.data.repository.RecordingRepository
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -50,6 +52,14 @@ class RecordingRepositoryImpl @Inject constructor(
 
     override suspend fun incrementChunkRetry(chunkId: String) =
         chunkDao.incrementRetryCount(chunkId)
+
+    override suspend fun getInterruptedSessions(): List<RecordingSessionEntity> =
+        sessionDao.getSessionsByStatuses(listOf(SessionStatus.RECORDING, SessionStatus.PAUSED))
+
+    override suspend fun getPendingChunks(): List<AudioChunkEntity> =
+        chunkDao.getChunksByTranscriptionStates(
+            listOf(TranscriptionState.PENDING, TranscriptionState.IN_PROGRESS)
+        )
 }
 
 

@@ -17,3 +17,12 @@ val TwinError = Color(0xFFFF6B6B)
 val TwinOnPrimary = Color(0xFF0B0D10)
 val TwinOutline = Color(0xFF2A2F38)
 val TwinSurfaceVariant = Color(0xFF1F2329)
+
+// Polish – accent & glow
+val TwinAccentGreen = Color(0xFF4CAF50)
+val TwinGlow = Color(0xFF7C8CFF)
+val TwinCardBorder = Color(0xFF2A2F38)
+val TwinRecordingRed = Color(0xFFFF4C4C)
+val TwinGradientStart = Color(0xFF7C8CFF)
+val TwinGradientEnd = Color(0xFF9B7BFF)
+

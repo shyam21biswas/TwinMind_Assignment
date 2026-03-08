@@ -12,5 +12,7 @@ interface SummaryRepository {
     suspend fun insertOrUpdateSummary(summary: SummaryEntity)
 
     suspend fun deleteSummary(sessionId: String)
+
+    suspend fun getPendingSummaries(): List<SummaryEntity>
 }
 

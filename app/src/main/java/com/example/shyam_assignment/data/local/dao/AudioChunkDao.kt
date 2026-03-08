@@ -30,5 +30,8 @@ interface AudioChunkDao {
 
     @Query("DELETE FROM audio_chunks WHERE sessionId = :sessionId")
     suspend fun deleteChunksBySession(sessionId: String)
+
+    @Query("SELECT * FROM audio_chunks WHERE transcriptionState IN (:states)")
+    suspend fun getChunksByTranscriptionStates(states: List<String>): List<AudioChunkEntity>
 }
 

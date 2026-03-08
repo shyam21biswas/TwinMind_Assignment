@@ -1,5 +1,7 @@
 package com.example.shyam_assignment.ui.screens.summary
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,13 +22,14 @@ import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Lightbulb
- import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,9 +43,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,8 +56,11 @@ import com.example.shyam_assignment.data.local.entity.RecordingSessionEntity
 import com.example.shyam_assignment.data.local.entity.SummaryEntity
 import com.example.shyam_assignment.data.local.entity.SummaryStatus
 import com.example.shyam_assignment.data.local.entity.TranscriptSegmentEntity
+import com.example.shyam_assignment.ui.theme.TwinCardBorder
 import com.example.shyam_assignment.ui.theme.TwinElevatedCard
 import com.example.shyam_assignment.ui.theme.TwinError
+import com.example.shyam_assignment.ui.theme.TwinGradientEnd
+import com.example.shyam_assignment.ui.theme.TwinGradientStart
 import com.example.shyam_assignment.ui.theme.TwinPrimary
 import com.example.shyam_assignment.ui.theme.TwinSecondary
 import com.example.shyam_assignment.ui.theme.TwinTextSecondary
@@ -168,15 +178,24 @@ private fun SummaryContent(
                     summary!!.title
                 else
                     session.title ?: "Untitled Recording",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Duration: ${formatDuration(session.durationMs)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = TwinTextSecondary
-            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(TwinPrimary.copy(alpha = 0.5f))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Duration: ${formatDuration(session.durationMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TwinTextSecondary
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -193,7 +212,7 @@ private fun SummaryContent(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Generate button if no summary and not generating and has transcript
+        // Generate button only if no summary exists, not generating, not completed, and has transcript
         if (summaryStatus == null && !isSummaryGenerating && transcript.isNotEmpty()) {
             GenerateSummaryButton(onClick = onGenerateSummary)
             Spacer(modifier = Modifier.height(16.dp))
@@ -206,85 +225,111 @@ private fun SummaryContent(
             iconTint = TwinPrimary
         ) {
             val summaryText = summary?.summary.orEmpty()
+            val isCompleted = summaryStatus == SummaryStatus.COMPLETED
             Text(
                 text = when {
                     summaryText.isNotBlank() -> summaryText
+                    isCompleted -> "No summary available."
                     isSummaryGenerating -> "Generating summary with Gemini AI..."
                     transcript.isEmpty() -> "No transcript available. Record a meeting first."
                     else -> "Summary will be generated by Gemini AI..."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (summaryText.isBlank()) TwinTextSecondary
-                else MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface,
+                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Action Items Card
-        SummaryCard(
-            icon = Icons.Outlined.CheckCircle,
-            title = "Action Items",
-            iconTint = TwinSecondary
-        ) {
-            if (actionItems.isEmpty()) {
-                Text(
-                    text = if (isSummaryGenerating) "Extracting action items..."
-                    else "Action items will be extracted by Gemini AI...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TwinTextSecondary
-                )
-            } else {
-                actionItems.forEachIndexed { index, item ->
-                    Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                        Text(
-                            text = "${index + 1}.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TwinSecondary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = item,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+        // Action Items Card — hide if completed with no items
+        val isCompleted = summaryStatus == SummaryStatus.COMPLETED
+        if (actionItems.isNotEmpty() || !isCompleted) {
+            SummaryCard(
+                icon = Icons.Outlined.CheckCircle,
+                title = "Action Items",
+                iconTint = TwinSecondary
+            ) {
+                if (actionItems.isEmpty()) {
+                    Text(
+                        text = if (isSummaryGenerating) "Extracting action items..."
+                        else if (isCompleted) "No action items identified."
+                        else "Action items will be extracted by Gemini AI...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TwinTextSecondary
+                    )
+                } else {
+                    actionItems.forEachIndexed { index, item ->
+                        Row(modifier = Modifier.padding(vertical = 6.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(TwinSecondary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = TwinSecondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = item,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Key Points Card
-        SummaryCard(
-            icon = Icons.Outlined.Lightbulb,
-            title = "Key Points",
-            iconTint = TwinPrimary
-        ) {
-            if (keyPoints.isEmpty()) {
-                Text(
-                    text = if (isSummaryGenerating) "Identifying key points..."
-                    else "Key points will be identified by Gemini AI...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TwinTextSecondary
-                )
-            } else {
-                keyPoints.forEach { point ->
-                    Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                        Text(
-                            text = "•",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TwinPrimary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = point,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+        // Key Points Card — hide if completed with no points
+        if (keyPoints.isNotEmpty() || !isCompleted) {
+            SummaryCard(
+                icon = Icons.Outlined.Lightbulb,
+                title = "Key Points",
+                iconTint = TwinPrimary
+            ) {
+                if (keyPoints.isEmpty()) {
+                    Text(
+                        text = if (isSummaryGenerating) "Identifying key points..."
+                        else if (isCompleted) "No key points identified."
+                        else "Key points will be identified by Gemini AI...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TwinTextSecondary
+                    )
+                } else {
+                    keyPoints.forEach { point ->
+                        Row(modifier = Modifier.padding(vertical = 6.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(TwinGradientStart, TwinGradientEnd)
+                                        )
+                                    )
+                                    .padding(top = 6.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = point,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // Transcript Card
@@ -295,13 +340,20 @@ private fun SummaryContent(
                 title = "Transcript",
                 iconTint = TwinTextSecondary
             ) {
-                transcript.forEach { segment ->
+                transcript.forEachIndexed { index, segment ->
                     Text(
                         text = segment.text,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
+                    if (index < transcript.lastIndex) {
+                        HorizontalDivider(
+                            color = TwinCardBorder.copy(alpha = 0.3f),
+                            thickness = 0.5.dp,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -324,23 +376,52 @@ private fun SummaryCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+        Column {
+            // Top accent gradient line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                iconTint.copy(alpha = 0.6f),
+                                iconTint.copy(alpha = 0.1f)
+                            )
+                        )
+                    )
+            )
+
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(iconTint.copy(alpha = 0.1f))
+                            .border(1.dp, iconTint.copy(alpha = 0.15f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                content()
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            content()
         }
     }
 }
@@ -353,19 +434,27 @@ private fun SummaryGeneratingCard() {
         colors = CardDefaults.cardColors(containerColor = TwinElevatedCard)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CircularProgressIndicator(
-                color = TwinPrimary,
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp
-            )
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(TwinPrimary.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = TwinPrimary,
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp
+                )
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
                     text = "Generating Summary...",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(2.dp))
@@ -384,21 +473,25 @@ private fun SummaryErrorCard(error: String, onRetry: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = TwinError.copy(alpha = 0.1f))
+        colors = CardDefaults.cardColors(containerColor = TwinError.copy(alpha = 0.08f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .border(1.dp, TwinError.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+                .padding(20.dp)
+        ) {
             Text(
                 text = "Summary Generation Failed",
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = TwinError
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = error,
                 style = MaterialTheme.typography.bodySmall,
                 color = TwinError.copy(alpha = 0.8f)
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = onRetry,
                 colors = ButtonDefaults.buttonColors(containerColor = TwinPrimary),
@@ -422,9 +515,12 @@ private fun GenerateSummaryButton(onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(containerColor = TwinPrimary),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(14.dp)
     ) {
-        Text("Generate Summary with Gemini AI")
+        Text(
+            text = "Generate Summary with Gemini AI",
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
     }
 }
 
@@ -435,11 +531,20 @@ private fun LoadingPlaceholder(message: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(
-                color = TwinPrimary,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(TwinElevatedCard),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = TwinPrimary,
+                    modifier = Modifier.size(32.dp),
+                    strokeWidth = 2.5.dp
+                )
+            }
+            Spacer(modifier = Modifier.height(20.dp))
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
@@ -460,12 +565,20 @@ private fun ErrorPlaceholder(
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "⚠",
-                style = MaterialTheme.typography.headlineLarge,
-                color = TwinError
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(TwinError.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "⚠",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = TwinError
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = error,
                 style = MaterialTheme.typography.bodyMedium,

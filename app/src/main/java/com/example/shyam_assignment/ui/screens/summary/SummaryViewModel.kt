@@ -52,37 +52,53 @@ class SummaryViewModel @Inject constructor(
         initialValue = SummaryUiState(isLoading = true)
     )
 
+    /** Guards against multiple simultaneous generateSummary calls */
+    private var generationTriggered = false
+
     /**
-     * Triggers summary generation. Called automatically when entering SummaryScreen
-     * if no summary exists, or manually via Retry button.
+     * Triggers summary generation. Called automatically when entering SummaryScreen.
+     * Will NOT re-call Gemini if summary is already COMPLETED or GENERATING.
      */
     fun generateSummary(context: Context) {
+        if (generationTriggered) return
+        generationTriggered = true
+
         viewModelScope.launch {
-            // Check if summary already completed
-            val existing = summaryRepository.getSummaryBySessionOnce(sessionId)
-            if (existing?.status == SummaryStatus.COMPLETED) return@launch
-            if (existing?.status == SummaryStatus.GENERATING) return@launch
+            try {
+                // Check current summary status in Room
+                val existing = summaryRepository.getSummaryBySessionOnce(sessionId)
 
-            // Check if there's transcript to summarize
-            val segments = transcriptRepository.getTranscriptBySessionOnce(sessionId)
-            if (segments.isEmpty()) return@launch
+                // Already done — nothing to do
+                if (existing?.status == SummaryStatus.COMPLETED) return@launch
 
-            // Mark as pending in Room
-            summaryRepository.insertOrUpdateSummary(
-                SummaryEntity(
-                    sessionId = sessionId,
-                    status = SummaryStatus.GENERATING,
-                    updatedAt = System.currentTimeMillis()
+                // Already in progress — don't re-enqueue
+                if (existing?.status == SummaryStatus.GENERATING) return@launch
+
+                // Check if there's transcript to summarize
+                val segments = transcriptRepository.getTranscriptBySessionOnce(sessionId)
+                if (segments.isEmpty()) return@launch
+
+                // Mark as generating in Room
+                summaryRepository.insertOrUpdateSummary(
+                    SummaryEntity(
+                        sessionId = sessionId,
+                        status = SummaryStatus.GENERATING,
+                        updatedAt = System.currentTimeMillis()
+                    )
                 )
-            )
 
-            // Enqueue the worker
-            SummaryWorker.enqueue(context, sessionId)
+                // Enqueue the worker (unique work — won't duplicate)
+                SummaryWorker.enqueue(context, sessionId)
+            } finally {
+                // Allow retry button to work
+                generationTriggered = false
+            }
         }
     }
 
     /**
      * Retries summary generation after a failure.
+     * Uses REPLACE policy to force a new attempt.
      */
     fun retrySummary(context: Context) {
         viewModelScope.launch {
@@ -95,7 +111,7 @@ class SummaryViewModel @Inject constructor(
                     updatedAt = System.currentTimeMillis()
                 )
             )
-            SummaryWorker.enqueue(context, sessionId)
+            SummaryWorker.enqueueReplace(context, sessionId)
         }
     }
 }

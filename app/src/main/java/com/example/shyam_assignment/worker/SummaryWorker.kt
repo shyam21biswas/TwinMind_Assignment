@@ -6,14 +6,17 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.example.shyam_assignment.data.api.GeminiApiService
+import com.example.shyam_assignment.data.local.entity.SessionStatus
 import com.example.shyam_assignment.data.local.entity.SummaryEntity
 import com.example.shyam_assignment.data.local.entity.SummaryStatus
+import com.example.shyam_assignment.data.repository.RecordingRepository
 import com.example.shyam_assignment.data.repository.SummaryRepository
 import com.example.shyam_assignment.data.repository.TranscriptRepository
 import com.google.gson.Gson
@@ -27,7 +30,8 @@ class SummaryWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val geminiApiService: GeminiApiService,
     private val transcriptRepository: TranscriptRepository,
-    private val summaryRepository: SummaryRepository
+    private val summaryRepository: SummaryRepository,
+    private val recordingRepository: RecordingRepository
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -52,8 +56,41 @@ class SummaryWorker @AssistedInject constructor(
                 .addTag("session_$sessionId")
                 .build()
 
-            WorkManager.getInstance(context).enqueue(workRequest)
+            // KEEP = if work for this session already exists, skip
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "summary_$sessionId",
+                ExistingWorkPolicy.KEEP,
+                workRequest
+            )
             Log.d(TAG, "Enqueued summary generation for session=$sessionId")
+        }
+
+        /**
+         * Force-enqueue replacing any existing work — used for Retry.
+         */
+        fun enqueueReplace(context: Context, sessionId: String) {
+            val workRequest = OneTimeWorkRequestBuilder<SummaryWorker>()
+                .setInputData(workDataOf(KEY_SESSION_ID to sessionId))
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    20,
+                    TimeUnit.SECONDS
+                )
+                .addTag("summary")
+                .addTag("session_$sessionId")
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "summary_$sessionId",
+                ExistingWorkPolicy.REPLACE,
+                workRequest
+            )
+            Log.d(TAG, "Enqueued (REPLACE) summary generation for session=$sessionId")
         }
     }
 
@@ -65,8 +102,16 @@ class SummaryWorker @AssistedInject constructor(
 
         Log.d(TAG, "Starting summary generation for session=$sessionId (attempt ${runAttemptCount + 1})")
 
-        // 1. Mark as generating
+        // 0. Early-exit if summary is already completed (prevents duplicate API calls)
         val existing = summaryRepository.getSummaryBySessionOnce(sessionId)
+        if (existing?.status == SummaryStatus.COMPLETED) {
+            Log.d(TAG, "Summary already completed for session=$sessionId — skipping")
+            // Also ensure session is marked COMPLETED
+            markSessionCompleted(sessionId)
+            return Result.success()
+        }
+
+        // 1. Mark as generating
         val summaryEntity = existing ?: SummaryEntity(sessionId = sessionId)
         summaryRepository.insertOrUpdateSummary(
             summaryEntity.copy(
@@ -113,6 +158,9 @@ class SummaryWorker @AssistedInject constructor(
                     )
                 )
 
+                // ── Mark session as COMPLETED ──
+                markSessionCompleted(sessionId)
+
                 Result.success()
             },
             onFailure = { error ->
@@ -141,6 +189,27 @@ class SummaryWorker @AssistedInject constructor(
                 }
             }
         )
+    }
+
+    /**
+     * Marks the recording session as COMPLETED in Room so the dashboard
+     * shows the correct status chip.
+     */
+    private suspend fun markSessionCompleted(sessionId: String) {
+        try {
+            val session = recordingRepository.getSessionByIdOnce(sessionId)
+            if (session != null && session.status != SessionStatus.COMPLETED) {
+                recordingRepository.updateSession(
+                    session.copy(
+                        status = SessionStatus.COMPLETED,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                Log.d(TAG, "Session $sessionId marked as COMPLETED")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to mark session completed", e)
+        }
     }
 }
 
