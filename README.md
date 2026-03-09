@@ -18,7 +18,7 @@ A TwinMind-inspired Android voice recording app that captures audio in real time
 ## Demo Video
 
 🎥 [Watch Demo Video Part1](https://drive.google.com/file/d/1mQcQapqAKdlBrz682Rj-0cpnmw-nWbhm/view?usp=drive_link)
-🎥 [Watch Demo Video Part1](https://drive.google.com/file/d/1TJYgEJx_v-8owsSziZA16azxzTHWd5LR/view?usp=drive_link)
+🎥 [Watch Demo Video Part2](https://drive.google.com/file/d/1TJYgEJx_v-8owsSziZA16azxzTHWd5LR/view?usp=drive_link)
 
 
 ---
