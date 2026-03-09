@@ -3,10 +3,29 @@
 A TwinMind-inspired Android voice recording app that captures audio in real time, transcribes it using **Gemini 2.5 Flash**, and generates structured meeting summaries — all with a clean, premium light UI.
 
 ---
+## Screenshots
 
+<p align="center">
+  <img src="https://drive.google.com/uc?export=view&id=1Mv3Qj7bljR75lNZ5ouSwoTVYAP30VUQE" alt="Screenshot 1" width="180"/>
+  <img src="https://drive.google.com/uc?export=view&id=1tqOrbSMyUtfSdZIWkTXzsZxEB93zbdwP" alt="Screenshot 2" width="180"/>
+  <img src="https://drive.google.com/uc?export=view&id=1b8ywjaxK2-flGoXQTKc0KmTgGa2ZYwnb" alt="Screenshot 3" width="180"/>
+  <img src="https://drive.google.com/uc?export=view&id=1aUpAVGMG5D-goCaSPWw-PVq04T3UWqCB" alt="Screenshot 4" width="180"/>
+  <img src="https://drive.google.com/uc?export=view&id=1L2k7acQJuNu1wQAyxMik-7R0Ld4fx8A3" alt="Screenshot 5" width="180"/>
+</p>
+
+---
+
+## Demo Video
+
+🎥 [Watch Demo Video Part1](https://drive.google.com/file/d/1mQcQapqAKdlBrz682Rj-0cpnmw-nWbhm/view?usp=drive_link)
+🎥 [Watch Demo Video Part1](https://drive.google.com/file/d/1TJYgEJx_v-8owsSziZA16azxzTHWd5LR/view?usp=drive_link)
+
+
+---
 ## Architecture
 
 ```
+
 UI (Jetpack Compose)
   ↓
 ViewModel (StateFlow → UiState)
