@@ -353,7 +353,5 @@ Duplicate API calls are prevented by:
 
 ---
 
-## License
 
-This project is for educational / assignment purposes.
 
